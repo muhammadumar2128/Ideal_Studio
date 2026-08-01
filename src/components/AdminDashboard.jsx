@@ -31,6 +31,7 @@ export default function AdminDashboard({
   setState,
   onLogout,
   onMarkPaid,
+  onDeleteSale,
   onSyncSettings,
   onWipeAll,
   onExportJson,
@@ -455,20 +456,30 @@ export default function AdminDashboard({
                               <span style={{ color: '#059669', fontWeight: 700 }}>Paid</span>
                             )}
                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            {bal > 0 ? (
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              {bal > 0 && (
+                                <button
+                                  className="btn primary sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMarkPaid(s.id);
+                                  }}
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
                               <button
-                                className="btn primary sm"
+                                className="btn danger sm"
+                                title="Delete receipt permanently"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onMarkPaid(s.id);
+                                  onDeleteSale && onDeleteSale(s.id);
                                 }}
                               >
-                                Mark Paid
+                                🗑️ Delete
                               </button>
-                            ) : (
-                              <span style={{ color: 'var(--muted)' }}>—</span>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );

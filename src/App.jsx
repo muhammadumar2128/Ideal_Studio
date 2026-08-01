@@ -352,6 +352,31 @@ export default function App() {
     }
   };
 
+  // Handle Delete Individual Sale (Admin Only)
+  const handleDeleteSale = async (saleId) => {
+    if (!window.confirm(`Delete receipt ${saleId}? This cannot be undone.`)) return;
+
+    setState(prev => ({
+      ...prev,
+      sales: prev.sales.filter(s => s.id !== saleId)
+    }));
+
+    if (activeModalSale && activeModalSale.id === saleId) {
+      setActiveModalSale(null);
+    }
+
+    if (supabase) {
+      try {
+        await supabase
+          .from('sales')
+          .delete()
+          .eq('id', saleId);
+      } catch (err) {
+        console.error('Error deleting sale in Supabase:', err);
+      }
+    }
+  };
+
   // Export & Backup handlers
   const downloadFile = (fileName, content, type) => {
     const blob = new Blob([content], { type });
@@ -518,6 +543,7 @@ export default function App() {
           setState={setState}
           onLogout={handleLogoutAdmin}
           onMarkPaid={handleMarkPaid}
+          onDeleteSale={handleDeleteSale}
           onSyncSettings={syncSettingsToCloud}
           onWipeAll={handleWipeAll}
           onExportJson={handleExportJson}
