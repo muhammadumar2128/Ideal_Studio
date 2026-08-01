@@ -485,7 +485,8 @@ export default function App() {
   }
 
   return (
-    <div className="wrap">
+    <>
+      <div className="wrap">
       {/* GLOBAL HEADER */}
       <header className="top">
         <div className="brand">
@@ -594,84 +595,85 @@ export default function App() {
           onClose={() => setShowLoginModal(false)}
         />
       )}
+    </div>
 
-      {/* THERMAL RECEIPT MODAL OVERLAY */}
-      {activeModalSale && (
-        <div
-          className="overlay show"
-          onClick={(e) => {
-            if (e.target.className && e.target.className.includes('overlay')) {
-              setActiveModalSale(null);
-            }
-          }}
-        >
-          <div>
-            <div id="receipt">
-              <div className="rc-in">
-                <div className="rc-c rc-name">{state.studio}</div>
-                <div className="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
-                <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5005990</div>
-                <div className="rc-c rc-small">Sales Receipt</div>
-                <div className="rc-sep"></div>
+    {/* THERMAL RECEIPT MODAL OVERLAY (Outside .wrap for exact printing) */}
+    {activeModalSale && (
+      <div
+        className="overlay show"
+        onClick={(e) => {
+          if (e.target.className && e.target.className.includes('overlay')) {
+            setActiveModalSale(null);
+          }
+        }}
+      >
+        <div>
+          <div id="receipt">
+            <div className="rc-in">
+              <div className="rc-c rc-name">{state.studio}</div>
+              <div className="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
+              <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5005990</div>
+              <div className="rc-c rc-small">Sales Receipt</div>
+              <div className="rc-sep"></div>
 
-                <div className="rc-row"><span>Receipt</span><span>{activeModalSale.id}</span></div>
-                <div className="rc-row"><span>Date</span><span>{fmtDate(activeModalSale.ts)}</span></div>
-                {activeModalSale.staff && <div className="rc-row"><span>Served by</span><span>{activeModalSale.staff}</span></div>}
-                {activeModalSale.customer && <div className="rc-row"><span>Customer</span><span>{activeModalSale.customer}</span></div>}
-                {activeModalSale.phone && <div className="rc-row"><span>Phone</span><span>{activeModalSale.phone}</span></div>}
+              <div className="rc-row"><span>Receipt</span><span>{activeModalSale.id}</span></div>
+              <div className="rc-row"><span>Date</span><span>{fmtDate(activeModalSale.ts)}</span></div>
+              {activeModalSale.staff && <div className="rc-row"><span>Served by</span><span>{activeModalSale.staff}</span></div>}
+              {activeModalSale.customer && <div className="rc-row"><span>Customer</span><span>{activeModalSale.customer}</span></div>}
+              {activeModalSale.phone && <div className="rc-row"><span>Phone</span><span>{activeModalSale.phone}</span></div>}
 
-                <div className="rc-sep"></div>
-                {activeModalSale.items.map((it, idx) => (
-                  <div key={idx} className="rc-item">
-                    <div className="top">
-                      <span>{it.label}</span>
-                      <span>{money(it.price * it.qty)}</span>
-                    </div>
-                    <div className="sub">{it.qty} × {money(it.price)}</div>
+              <div className="rc-sep"></div>
+              {activeModalSale.items.map((it, idx) => (
+                <div key={idx} className="rc-item">
+                  <div className="top">
+                    <span>{it.label}</span>
+                    <span>{money(it.price * it.qty)}</span>
                   </div>
-                ))}
-                <div className="rc-sep"></div>
+                  <div className="sub">{it.qty} × {money(it.price)}</div>
+                </div>
+              ))}
+              <div className="rc-sep"></div>
 
-                <div className="rc-total">
-                  <span>TOTAL</span>
-                  <span>{money(activeModalSale.total)}</span>
+              <div className="rc-total">
+                <span>TOTAL</span>
+                <span>{money(activeModalSale.total)}</span>
+              </div>
+              <div className="rc-row" style={{ marginTop: '4px' }}>
+                <span>Paid</span>
+                <span>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
+              </div>
+              {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
+                <div className="rc-row" style={{ fontWeight: 700 }}>
+                  <span>BALANCE</span>
+                  <span>{money(activeModalSale.balance)}</span>
                 </div>
-                <div className="rc-row" style={{ marginTop: '4px' }}>
-                  <span>Paid</span>
-                  <span>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
-                </div>
-                {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
-                  <div className="rc-row" style={{ fontWeight: 700 }}>
-                    <span>BALANCE</span>
-                    <span>{money(activeModalSale.balance)}</span>
-                  </div>
-                )}
-                <div className="rc-foot">
-                  Thank you for your business.<br />Powered By Lunar Ai
-                </div>
+              )}
+              <div className="rc-foot">
+                Thank you for your business.<br />Powered By Lunar Ai
               </div>
             </div>
+          </div>
 
-            <div className="rc-actions">
-              <button className="btn primary" style={{ flex: 1 }} onClick={() => window.print()}>
-                🖨️ Print Receipt
+          <div className="rc-actions">
+            <button className="btn primary" style={{ flex: 1 }} onClick={() => window.print()}>
+              🖨️ Print Receipt
+            </button>
+            {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
+              <button
+                className="btn primary"
+                style={{ flex: 1, background: 'var(--emerald)' }}
+                onClick={() => handleMarkPaid(activeModalSale.id)}
+              >
+                Mark Paid
               </button>
-              {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
-                <button
-                  className="btn primary"
-                  style={{ flex: 1, background: 'var(--emerald)' }}
-                  onClick={() => handleMarkPaid(activeModalSale.id)}
-                >
-                  Mark Paid
-                </button>
-              )}
-              <button className="btn ghost" style={{ flex: 1 }} onClick={() => setActiveModalSale(null)}>
-                Close
-              </button>
-            </div>
+            )}
+            <button className="btn ghost" style={{ flex: 1 }} onClick={() => setActiveModalSale(null)}>
+              Close
+            </button>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </>
+);
 }
