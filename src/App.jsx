@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import logoImg from '../WhatsApp Image 2026-08-01 at 3.09.30 PM.jpeg';
 import { supabase } from './supabaseClient.js';
+import PlatformLogin from './components/PlatformLogin.jsx';
 import AdminLogin from './components/AdminLogin.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import TeamPOSView from './components/TeamPOSView.jsx';
@@ -87,6 +88,9 @@ function fmtDate(ts) {
 
 export default function App() {
   const [state, setState] = useState(loadInitialState);
+  const [isPlatformAuth, setIsPlatformAuth] = useState(() => {
+    return localStorage.getItem('platform_pos_auth') === 'true' || sessionStorage.getItem('platform_pos_auth') === 'true';
+  });
   const [viewMode, setViewMode] = useState('team'); // 'team' or 'admin'
   const [adminUser, setAdminUser] = useState(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -467,6 +471,19 @@ export default function App() {
     setViewMode('team');
   };
 
+  // 1. If not authenticated into the Platform yet, render Platform Login screen
+  if (!isPlatformAuth) {
+    return (
+      <PlatformLogin
+        onLoginSuccess={() => {
+          localStorage.setItem('platform_pos_auth', 'true');
+          sessionStorage.setItem('platform_pos_auth', 'true');
+          setIsPlatformAuth(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="wrap">
       {/* GLOBAL HEADER */}
@@ -505,7 +522,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* MODE SWITCHER BUTTONS */}
+        {/* MODE SWITCHER & PLATFORM LOCK BUTTONS */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           {viewMode === 'team' ? (
             <button
@@ -524,6 +541,19 @@ export default function App() {
               🛒 Back to Counter POS
             </button>
           )}
+
+          <button
+            className="btn ghost sm"
+            title="Lock platform"
+            onClick={() => {
+              localStorage.removeItem('platform_pos_auth');
+              sessionStorage.removeItem('platform_pos_auth');
+              setIsPlatformAuth(false);
+            }}
+            style={{ borderRadius: '10px', color: 'var(--muted)' }}
+          >
+            🔒 Lock
+          </button>
         </div>
       </header>
 
