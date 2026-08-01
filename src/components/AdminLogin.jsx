@@ -21,10 +21,16 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
 
     setLoading(true);
 
-    // Convert 'admin' to admin email format for Supabase Auth if needed
-    const authEmail = inputUser === 'admin' ? 'admin@idealstudio.com' : (inputUser.includes('@') ? inputUser : `${inputUser}@idealstudio.com`);
+    // 1. Instant check for master admin credentials (bypasses unnecessary Supabase HTTP 400 calls)
+    if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
+      onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
+      setLoading(false);
+      return;
+    }
 
+    // 2. Supabase Auth check for custom registered email accounts
     if (supabase) {
+      const authEmail = inputUser.includes('@') ? inputUser : `${inputUser}@idealstudio.com`;
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
           email: authEmail,
@@ -32,31 +38,17 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
         });
 
         if (error) {
-          // Master fallback check for admin username & password
-          if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
-            onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
-            return;
-          }
           setErrorMsg('Invalid admin username or password.');
         } else if (data?.user) {
-          onLoginSuccess({ ...data.user, username: 'admin' });
+          onLoginSuccess({ ...data.user, username: inputUser });
         }
       } catch (err) {
-        if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
-          onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
-          return;
-        }
         setErrorMsg('Authentication error. Check network or credentials.');
       } finally {
         setLoading(false);
       }
     } else {
-      // Local fallback mode
-      if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
-        onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
-      } else {
-        setErrorMsg('Incorrect admin password.');
-      }
+      setErrorMsg('Incorrect admin password.');
       setLoading(false);
     }
   };
