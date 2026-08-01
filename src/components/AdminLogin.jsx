@@ -22,7 +22,7 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
     setLoading(true);
 
     // 1. Instant check for master admin credentials (bypasses unnecessary Supabase HTTP 400 calls)
-    if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
+    if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === 'irhaali') {
       onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
       setLoading(false);
       return;

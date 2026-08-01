@@ -83,7 +83,7 @@ function pad(n) {
 
 function fmtDate(ts) {
   const d = new Date(ts);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 export default function App() {
@@ -96,6 +96,18 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [cloudSynced, setCloudSynced] = useState(false);
   const [activeModalSale, setActiveModalSale] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('studio_pos_theme') || 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('studio_pos_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   // Auto-save state to localStorage whenever it changes
   useEffect(() => {
@@ -542,6 +554,15 @@ export default function App() {
               🛒 Back to Counter POS
             </button>
           )}
+
+          <button
+            className="btn ghost sm"
+            title="Toggle Light/Dark Theme"
+            onClick={toggleTheme}
+            style={{ borderRadius: '10px', fontWeight: 600 }}
+          >
+            {theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'}
+          </button>
 
           <button
             className="btn ghost sm"

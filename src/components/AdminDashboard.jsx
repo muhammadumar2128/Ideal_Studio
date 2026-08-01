@@ -8,7 +8,7 @@ function money(n) {
 
 function fmtDate(ts) {
   const d = new Date(ts);
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 function isSameDay(d1, d2) {
@@ -41,11 +41,12 @@ export default function AdminDashboard({
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
-  // Form states for new items & staff
+  // Form states for new items, sets, and staff
   const [newSetName, setNewSetName] = useState('');
   const [newSetPrice, setNewSetPrice] = useState('');
   const [newMiscName, setNewMiscName] = useState('');
   const [newMiscPrice, setNewMiscPrice] = useState('');
+  const [newPrintSize, setNewPrintSize] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
 
   // Search & Filter state for Sales Audit
@@ -144,9 +145,54 @@ export default function AdminDashboard({
     return true;
   });
 
-  const SIZES = ["4x6", "5x7", "6x8", "6x9", "8x10", "8x12", "10x12", "10x15", "12x16", "12x18", "16x20", "20x24", "24x30", "24x30 (large)"];
-  const PP = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56];
+  const printSizes = Object.keys(state.prints || {});
   const TYPES = [["normal", "Normal EXP"], ["bg", "BG Change"], ["reorder", "Re-order"], ["urgent", "Re-order (Urgent)"]];
+
+  // Rate additions
+  const handleAddMiscItem = () => {
+    const name = newMiscName.trim();
+    const price = Number(newMiscPrice) || 0;
+    if (!name) return;
+    const nextState = {
+      ...state,
+      misc: [...state.misc, { name, price }]
+    };
+    setState(nextState);
+    onSyncSettings(nextState);
+    setNewMiscName('');
+    setNewMiscPrice('');
+  };
+
+  const handleAddSetItem = () => {
+    const name = newSetName.trim();
+    const price = Number(newSetPrice) || 0;
+    if (!name) return;
+    const nextState = {
+      ...state,
+      sets: [...state.sets, { name, price }]
+    };
+    setState(nextState);
+    onSyncSettings(nextState);
+    setNewSetName('');
+    setNewSetPrice('');
+  };
+
+  const handleAddPrintSize = () => {
+    const sz = newPrintSize.trim();
+    if (!sz) return;
+    if (state.prints[sz]) {
+      alert(`Size ${sz} already exists.`);
+      return;
+    }
+    const nextState = {
+      ...state,
+      prints: { ...state.prints, [sz]: { normal: 0, bg: 0, reorder: 0, urgent: 0 } },
+      frames: { ...state.frames, [sz]: 0 }
+    };
+    setState(nextState);
+    onSyncSettings(nextState);
+    setNewPrintSize('');
+  };
 
   return (
     <div className="admin-dashboard">
@@ -207,11 +253,11 @@ export default function AdminDashboard({
 
       {/* ADMIN INNER TABS NAVIGATION */}
       <nav className="tabs" style={{ marginBottom: '24px' }}>
-        <button className={adminTab === 'analytics' ? 'active' : ''} onClick={() => setAdminTab('analytics')}>📈 Analytics & Graphs</button>
+        <button className={adminTab === 'analytics' ? 'active' : ''} onClick={() => setAdminTab('analytics')}>📈 Analytics &amp; Graphs</button>
         <button className={adminTab === 'audit' ? 'active' : ''} onClick={() => setAdminTab('audit')}>📋 Sales Audit ({totalSalesCount})</button>
-        <button className={adminTab === 'prices' ? 'active' : ''} onClick={() => setAdminTab('prices')}>🏷️ Rate List Editor</button>
-        <button className={adminTab === 'team' ? 'active' : ''} onClick={() => setAdminTab('team')}>👥 Team & Staff</button>
-        <button className={adminTab === 'system' ? 'active' : ''} onClick={() => setAdminTab('system')}>⚙️ System & Backup</button>
+        <button className={adminTab === 'prices' ? 'active' : ''} onClick={() => setAdminTab('prices')}>🏷️ Rate List &amp; Custom Services</button>
+        <button className={adminTab === 'team' ? 'active' : ''} onClick={() => setAdminTab('team')}>👥 Team &amp; Staff</button>
+        <button className={adminTab === 'system' ? 'active' : ''} onClick={() => setAdminTab('system')}>⚙️ System &amp; Backup</button>
       </nav>
 
       {/* TAB 1: ANALYTICS & GRAPH DASHBOARD */}
@@ -492,92 +538,341 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 3: RATE LIST EDITOR */}
+      {/* TAB 3: RATE LIST & CUSTOM SERVICES EDITOR */}
       {adminTab === 'prices' && (
-        <div className="card">
-          <h2>Rate List &amp; Service Price Management</h2>
-          <div className="body">
-            <p className="hint" style={{ marginTop: 0 }}>
-              Edit rates below. All updates auto-save instantly to Supabase cloud database and sync to team members.
-            </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* PRINTS & FRAMES RATE EDITOR */}
+          <div className="card">
+            <h2>📸 Print &amp; Frame Rate Management</h2>
+            <div className="body">
+              <p className="hint" style={{ marginTop: 0 }}>
+                Edit print and frame rates below. Changes sync instantly to <b>Supabase Cloud Database</b>.
+              </p>
 
-            {/* PRINTS */}
-            <div className="subhead">Prints</div>
-            <div style={{ overflowX: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Size</th>
-                    {TYPES.map(([k, t]) => <th key={k} className="num">{t}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {SIZES.map(sz => (
-                    <tr key={sz}>
-                      <td><b>{sz}</b></td>
-                      {TYPES.map(([k]) => (
-                        <td key={k} className="num">
+              {/* ADD NEW PRINT/FRAME SIZE */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap', padding: '14px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <div style={{ flex: 1, minWidth: '180px' }}>
+                  <label>Add New Print / Frame Size</label>
+                  <input
+                    placeholder="e.g. 30x40"
+                    value={newPrintSize}
+                    onChange={(e) => setNewPrintSize(e.target.value)}
+                  />
+                </div>
+                <button className="btn primary" onClick={handleAddPrintSize}>
+                  ➕ Add New Size
+                </button>
+              </div>
+
+              {/* PRINTS TABLE */}
+              <div className="subhead">Photo Print Rates</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Size</th>
+                      {TYPES.map(([k, t]) => <th key={k} className="num">{t}</th>)}
+                      <th style={{ textAlign: 'center' }}>Remove</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printSizes.map(sz => (
+                      <tr key={sz}>
+                        <td><b>{sz}</b></td>
+                        {TYPES.map(([k]) => (
+                          <td key={k} className="num">
+                            <input
+                              type="number"
+                              min="0"
+                              className="price-in mono"
+                              value={(state.prints[sz] && state.prints[sz][k] !== undefined) ? state.prints[sz][k] : ''}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? '' : Number(e.target.value) || 0;
+                                const nextState = {
+                                  ...state,
+                                  prints: {
+                                    ...state.prints,
+                                    [sz]: { ...(state.prints[sz] || {}), [k]: val }
+                                  }
+                                };
+                                setState(nextState);
+                                onSyncSettings(nextState);
+                              }}
+                            />
+                          </td>
+                        ))}
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            className="x"
+                            title="Remove size"
+                            onClick={() => {
+                              if (!window.confirm(`Remove size ${sz}?`)) return;
+                              const newPrints = { ...state.prints };
+                              delete newPrints[sz];
+                              const newFrames = { ...state.frames };
+                              delete newFrames[sz];
+                              const nextState = { ...state, prints: newPrints, frames: newFrames };
+                              setState(nextState);
+                              onSyncSettings(nextState);
+                            }}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* FRAMES TABLE */}
+              <div className="subhead">Photo Frame Rates</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Size</th>
+                      <th className="num">Frame price ({CUR})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printSizes.map(sz => (
+                      <tr key={sz}>
+                        <td><b>{sz} Frame</b></td>
+                        <td className="num">
                           <input
                             type="number"
                             min="0"
                             className="price-in mono"
-                            value={(state.prints[sz] && state.prints[sz][k] !== undefined) ? state.prints[sz][k] : ''}
+                            value={state.frames[sz] !== undefined ? state.frames[sz] : ''}
                             onChange={(e) => {
                               const val = e.target.value === '' ? '' : Number(e.target.value) || 0;
                               const nextState = {
                                 ...state,
-                                prints: {
-                                  ...state.prints,
-                                  [sz]: { ...(state.prints[sz] || {}), [k]: val }
-                                }
+                                frames: { ...state.frames, [sz]: val }
                               };
                               setState(nextState);
                               onSyncSettings(nextState);
                             }}
                           />
                         </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* MISC SERVICES & PRODUCTS EDITOR */}
+          <div className="grid">
+            <div className="card">
+              <h2>🛠️ Other Items &amp; Custom Services</h2>
+              <div className="body">
+                {!state.misc.length ? (
+                  <div className="empty-state">No custom items defined yet.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Service / Product Name</th>
+                          <th className="num">Rate ({CUR})</th>
+                          <th style={{ textAlign: 'center' }}>Remove</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {state.misc.map((m, idx) => (
+                          <tr key={idx}>
+                            <td>
+                              <input
+                                value={m.name}
+                                style={{ width: '100%', border: 'none', background: 'transparent', fontWeight: 600 }}
+                                onChange={(e) => {
+                                  const newName = e.target.value;
+                                  const nextMisc = [...state.misc];
+                                  nextMisc[idx] = { ...nextMisc[idx], name: newName };
+                                  const nextState = { ...state, misc: nextMisc };
+                                  setState(nextState);
+                                  onSyncSettings(nextState);
+                                }}
+                              />
+                            </td>
+                            <td className="num">
+                              <input
+                                type="number"
+                                min="0"
+                                className="price-in mono"
+                                value={m.price !== undefined ? m.price : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? '' : Number(e.target.value) || 0;
+                                  const nextMisc = [...state.misc];
+                                  nextMisc[idx] = { ...nextMisc[idx], price: val };
+                                  const nextState = { ...state, misc: nextMisc };
+                                  setState(nextState);
+                                  onSyncSettings(nextState);
+                                }}
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                className="x"
+                                title="Remove item"
+                                onClick={() => {
+                                  if (!window.confirm(`Delete ${m.name}?`)) return;
+                                  const nextState = {
+                                    ...state,
+                                    misc: state.misc.filter((_, i) => i !== idx)
+                                  };
+                                  setState(nextState);
+                                  onSyncSettings(nextState);
+                                }}
+                              >
+                                ×
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* FRAMES */}
-            <div className="subhead">Frames</div>
-            <div style={{ overflowX: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Size</th>
-                    <th className="num">Frame price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SIZES.map(sz => (
-                    <tr key={sz}>
-                      <td><b>{sz}</b></td>
-                      <td className="num">
-                        <input
-                          type="number"
-                          min="0"
-                          className="price-in mono"
-                          value={state.frames[sz] !== undefined ? state.frames[sz] : ''}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? '' : Number(e.target.value) || 0;
-                            const nextState = {
-                              ...state,
-                              frames: { ...state.frames, [sz]: val }
-                            };
-                            setState(nextState);
-                            onSyncSettings(nextState);
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* ADD NEW MISC ITEM */}
+            <div className="card">
+              <h2>➕ Add New Service / Item</h2>
+              <div className="body">
+                <div className="field">
+                  <label>Item / Service Name</label>
+                  <input
+                    placeholder="e.g. Mug Print, Soft Copy CD, Scan"
+                    value={newMiscName}
+                    onChange={(e) => setNewMiscName(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>Rate ({CUR})</label>
+                  <input
+                    className="mono"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={newMiscPrice}
+                    onChange={(e) => setNewMiscPrice(e.target.value)}
+                  />
+                </div>
+                <button className="btn primary block" onClick={handleAddMiscItem}>
+                  ➕ Add New Item to Rate List
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* PACKAGE SETS & COMBOS EDITOR */}
+          <div className="grid">
+            <div className="card">
+              <h2>🎁 Combo &amp; Package Sets</h2>
+              <div className="body">
+                {!state.sets.length ? (
+                  <div className="empty-state">No package sets defined yet.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Package Name</th>
+                          <th className="num">Price ({CUR})</th>
+                          <th style={{ textAlign: 'center' }}>Remove</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {state.sets.map((st, idx) => (
+                          <tr key={idx}>
+                            <td>
+                              <input
+                                value={st.name}
+                                style={{ width: '100%', border: 'none', background: 'transparent', fontWeight: 600 }}
+                                onChange={(e) => {
+                                  const newName = e.target.value;
+                                  const nextSets = [...state.sets];
+                                  nextSets[idx] = { ...nextSets[idx], name: newName };
+                                  const nextState = { ...state, sets: nextSets };
+                                  setState(nextState);
+                                  onSyncSettings(nextState);
+                                }}
+                              />
+                            </td>
+                            <td className="num">
+                              <input
+                                type="number"
+                                min="0"
+                                className="price-in mono"
+                                value={st.price !== undefined ? st.price : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? '' : Number(e.target.value) || 0;
+                                  const nextSets = [...state.sets];
+                                  nextSets[idx] = { ...nextSets[idx], price: val };
+                                  const nextState = { ...state, sets: nextSets };
+                                  setState(nextState);
+                                  onSyncSettings(nextState);
+                                }}
+                              />
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                className="x"
+                                title="Remove combo"
+                                onClick={() => {
+                                  if (!window.confirm(`Delete package ${st.name}?`)) return;
+                                  const nextState = {
+                                    ...state,
+                                    sets: state.sets.filter((_, i) => i !== idx)
+                                  };
+                                  setState(nextState);
+                                  onSyncSettings(nextState);
+                                }}
+                              >
+                                ×
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ADD NEW COMBO SET */}
+            <div className="card">
+              <h2>➕ Add New Combo Package</h2>
+              <div className="body">
+                <div className="field">
+                  <label>Package / Combo Name</label>
+                  <input
+                    placeholder="e.g. Set — 8 PP + 8 1x1 pics"
+                    value={newSetName}
+                    onChange={(e) => setNewSetName(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>Package Rate ({CUR})</label>
+                  <input
+                    className="mono"
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={newSetPrice}
+                    onChange={(e) => setNewSetPrice(e.target.value)}
+                  />
+                </div>
+                <button className="btn primary block" onClick={handleAddSetItem}>
+                  ➕ Add New Combo Package
+                </button>
+              </div>
             </div>
           </div>
         </div>
