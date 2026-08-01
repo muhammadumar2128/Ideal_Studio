@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ideal Photo Studio — Sales &amp; Receipts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --paper: #0F1923;
+      --card: #1A2733;
+      --ink: #E8EDF2;
+      --muted: #8899AA;
+      --line: #2A3A4A;
+      --line-soft: #1E2E3E;
+      --accent: #2DB5A3;
+      --accent-ink: #24A08E;
+      --accent-glow: rgba(45, 181, 163, 0.15);
+      --danger: #E85D4A;
+      --danger-soft: #2D1F1F;
+      --shadow: 0 2px 4px rgba(0, 0, 0, .15), 0 8px 24px rgba(0, 0, 0, .2);
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      background: var(--paper);
+      background-image: radial-gradient(ellipse at top left, rgba(45, 181, 163, 0.06) 0%, transparent 50%),
+                        radial-gradient(ellipse at bottom right, rgba(45, 181, 163, 0.04) 0%, transparent 50%);
+      color: var(--ink);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-variant-numeric: tabular-nums
+    }
+
+    .wrap {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 24px 20px 80px
+    }
+
+    header.top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+      flex-wrap: wrap;
+      padding: 16px 20px;
+      background: linear-gradient(135deg, #1A2733 0%, #152230 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow)
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px
+    }
+
+    .brand .logo {
+      height: 48px;
+      width: auto;
+      border-radius: 8px
+    }
+
+    .brand h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -.01em
+    }
+
+    .brand h1 span {
+      outline: none;
+      border-radius: 4px;
+      padding: 0 2px
+    }
+
+    .brand h1 span:focus {
+      background: #fff;
+      box-shadow: 0 0 0 2px var(--accent)
+    }
+
+    .brand .sub {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .brand h1 .hl {
+      color: var(--accent)
+    }
+
+    .tally {
+      display: flex;
+      gap: 10px
+    }
+
+    .stat {
+      background: linear-gradient(135deg, var(--card) 0%, #1E2E3E 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      min-width: 118px
+    }
+
+    .stat .k {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted)
+    }
+
+    .stat .v {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 2px;
+      color: var(--accent)
+    }
+
+    nav.tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 22px;
+      overflow-x: auto
+    }
+
+    nav.tabs button {
+      appearance: none;
+      background: none;
+      border: none;
+      font: inherit;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      white-space: nowrap;
+      transition: color 0.2s ease
+    }
+
+    nav.tabs button.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent)
+    }
+
+    nav.tabs button:hover {
+      color: var(--ink)
+    }
+
+    .panel {
+      display: none
+    }
+
+    .panel.active {
+      display: block
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 20px
+    }
+
+    @media(max-width:840px) {
+      .grid {
+        grid-template-columns: 1fr
+      }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      transition: box-shadow 0.2s ease
+    }
+
+    .card:hover {
+      box-shadow: 0 4px 8px rgba(0, 0, 0, .2), 0 12px 32px rgba(0, 0, 0, .25)
+    }
+
+    .card h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+      margin: 0;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center
+    }
+
+    .card .body {
+      padding: 16px 18px
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin: 0 0 5px
+    }
+
+    input,
+    select {
+      width: 100%;
+      font: inherit;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #0D1620;
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      background: #0D1620
+    }
+
+    .row {
+      display: grid;
+      gap: 10px
+    }
+
+    .r2 {
+      grid-template-columns: 1fr 1fr
+    }
+
+    .r3 {
+      grid-template-columns: 1.3fr 1fr 1fr
+    }
+
+    .field {
+      margin-bottom: 12px
+    }
+
+    .hidden {
+      display: none !important
+    }
+
+    button.btn {
+      appearance: none;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 9px;
+      padding: 10px 14px;
+      border: 1px solid transparent
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, #2DB5A3 0%, #24A08E 100%);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(45, 181, 163, 0.3)
+    }
+
+    .btn.primary:hover {
+      background: linear-gradient(135deg, #34C4B1 0%, #2DB5A3 100%);
+      box-shadow: 0 4px 14px rgba(45, 181, 163, 0.4)
+    }
+
+    .btn.ghost {
+      background: var(--card);
+      color: var(--ink);
+      border-color: var(--line)
+    }
+
+    .btn.ghost:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    .btn.danger {
+      background: #fff;
+      color: var(--danger);
+      border-color: var(--line)
+    }
+
+    .btn.danger:hover {
+      background: var(--danger-soft);
+      border-color: var(--danger)
+    }
+
+    .btn.sm {
+      padding: 6px 10px;
+      font-size: 13px
+    }
+
+    .btn.block {
+      width: 100%
+    }
+
+    .btn:disabled {
+      opacity: .45;
+      cursor: not-allowed
+    }
+
+    .preview-price {
+      background: var(--accent-glow);
+      border: 1px dashed var(--accent);
+      border-radius: 9px;
+      padding: 9px 11px;
+      font-weight: 700;
+      color: var(--accent)
+    }
+
+    .cart-empty {
+      color: var(--muted);
+      font-size: 13.5px;
+      padding: 14px 0;
+      text-align: center
+    }
+
+    .line {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line-soft)
+    }
+
+    .line:last-child {
+      border-bottom: none
+    }
+
+    .line .d {
+      flex: 1;
+      min-width: 0
+    }
+
+    .line .d .t {
+      font-weight: 600;
+      font-size: 14px
+    }
+
+    .line .d .m {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 1px
+    }
+
+    .line .amt {
+      font-weight: 700;
+      white-space: nowrap
+    }
+
+    .line .x {
+      color: var(--muted);
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-size: 16px;
+      line-height: 1;
+      padding: 2px 4px
+    }
+
+    .line .x:hover {
+      color: var(--danger)
+    }
+
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 2px solid var(--accent)
+    }
+
+    .total-row .l {
+      font-weight: 700
+    }
+
+    .total-row .v {
+      font-size: 22px;
+      font-weight: 700
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 14px
+    }
+
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      font-weight: 600
+    }
+
+    td.num,
+    th.num {
+      text-align: right
+    }
+
+    tbody tr.click {
+      cursor: pointer
+    }
+
+    tbody tr.click:hover {
+      background: var(--line-soft)
+    }
+
+    .search {
+      max-width: 260px
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      align-items: flex-end
+    }
+
+    .filters>div {
+      flex: 0 0 auto
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 40px 20px
+    }
+
+    .empty-state .big {
+      font-size: 15px;
+      color: var(--ink);
+      font-weight: 600;
+      margin-bottom: 4px
+    }
+
+    .price-in {
+      width: 82px;
+      padding: 6px 8px;
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace
+    }
+
+    .subhead {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      margin: 18px 0 8px
+    }
+
+    .subhead:first-child {
+      margin-top: 0
+    }
+
+    .hint {
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.55
+    }
+
+    .hint b {
+      color: var(--ink)
+    }
+
+    .stack>*+* {
+      margin-top: 10px
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--line-soft);
+      margin: 16px 0
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--line-soft);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 2px 7px
+    }
+
+    .quick-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      max-height: 240px;
+      overflow: auto;
+      padding: 2px
+    }
+
+    .chip {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12.5px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap
+    }
+
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--accent-ink)
+    }
+
+    .chip .p {
+      color: var(--muted);
+      margin-left: 8px;
+      font-size: 11.5px
+    }
+
+    /* Receipt (thermal slip look) */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 10, 15, .7);
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 30px 16px;
+      overflow: auto;
+      z-index: 50
+    }
+
+    .overlay.show {
+      display: flex
+    }
+
+    #receipt {
+      background: #fff;
+      width: 300px;
+      max-width: 100%;
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+      font-family: 'JetBrains Mono', monospace
+    }
+
+    .rc-in {
+      padding: 16px 16px 14px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #000;
+      font-weight: 700
+    }
+
+    .rc-c {
+      text-align: center
+    }
+
+    .rc-name {
+      font-weight: 900;
+      font-size: 17px;
+      color: #000;
+      letter-spacing: -0.01em
+    }
+
+    .rc-small {
+      font-size: 12px;
+      color: #000;
+      font-weight: 700
+    }
+
+    .rc-sep {
+      border-top: 1.5px dashed #000;
+      margin: 9px 0
+    }
+
+    .rc-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: #000;
+      font-weight: 700;
+      font-size: 13px
+    }
+
+    .rc-item .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 800;
+      color: #000;
+      font-size: 13px
+    }
+
+    .rc-item .sub {
+      font-size: 11.5px;
+      color: #000;
+      font-weight: 700
+    }
+
+    .rc-item {
+      margin: 6px 0
+    }
+
+    .rc-total {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 900;
+      font-size: 16px;
+      margin-top: 6px;
+      color: #000
+    }
+
+    .rc-foot {
+      text-align: center;
+      font-size: 12px;
+      color: #000;
+      font-weight: 700;
+      margin-top: 12px
+    }
+
+    .rc-actions {
+      display: flex;
+      gap: 8px;
+      padding: 0 16px 16px;
+      max-width: 300px
+    }
+
+    @media print {
+      @page {
+        size: 80mm auto;
+        margin: 0
+      }
+
+      html,
+      body {
+        width: 80mm;
+        background: #fff;
+        color: #000 !important;
+        font-weight: 700 !important
+      }
+
+      body>.wrap {
+        display: none !important
+      }
+
+      .overlay {
+        position: static;
+        display: block !important;
+        background: none;
+        padding: 0;
+        overflow: visible
+      }
+
+      .overlay .rc-actions {
+        display: none
+      }
+
+      /* 72.1mm printable area, centered on the 80mm roll so edges never clip */
+      #receipt {
+        width: 72mm;
+        max-width: 72mm;
+        box-shadow: none;
+        border-radius: 0;
+        margin: 0 auto;
+        color: #000 !important
+      }
+
+      #receipt * {
+        color: #000 !important;
+        font-weight: 700 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact
+      }
+
+      .rc-in {
+        padding: 1mm 1.5mm 3mm;
+        color: #000 !important;
+        font-size: 12px;
+        font-weight: 700 !important
+      }
+
+      .rc-name {
+        font-size: 16px;
+        color: #000 !important;
+        font-weight: 900 !important
+      }
+
+      .rc-total {
+        font-size: 15px;
+        font-weight: 900 !important
+      }
+
+      .rc-small, .rc-foot, .rc-item .sub, .rc-row {
+        color: #000 !important;
+        font-weight: 700 !important
+      }
+
+      .rc-sep {
+        border-top: 1.5px dashed #000 !important
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <img src="WhatsApp Image 2026-08-01 at 3.09.30 PM.jpeg" alt="Ideal Photo Studio Logo" class="logo">
+        <div>
+          <h1><span id="studioName" contenteditable="true" spellcheck="false">Ideal Photo Studio</span></h1>
+          <div class="sub">Ph: 0304-5225523 · WhatsApp: 0327-5005990</div>
+        </div>
+      </div>
+      <div class="tally">
+        <div class="stat">
+          <div class="k">Today</div>
+          <div class="v mono" id="statToday">Rs 0</div>
+        </div>
+        <div class="stat owner-lock-stat" id="boxWeek" style="cursor:pointer" title="Click to unlock/lock (Owner password required)">
+          <div class="k" id="lblWeek">This Week 🔒</div>
+          <div class="v mono" id="statWeek">••••••</div>
+        </div>
+        <div class="stat owner-lock-stat" id="boxMonth" style="cursor:pointer" title="Click to unlock/lock (Owner password required)">
+          <div class="k" id="lblMonth">This Month 🔒</div>
+          <div class="v mono" id="statMonth">••••••</div>
+        </div>
+        <div class="stat">
+          <div class="k">Total Sales</div>
+          <div class="v mono" id="statCount">0</div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button data-tab="sale" class="active">New sale</button>
+      <button data-tab="records">Records</button>
+      <button data-tab="prices">Prices</button>
+      <button data-tab="staff">Staff</button>
+      <button data-tab="backup">Backup</button>
+    </nav>
+
+    <!-- NEW SALE -->
+    <section class="panel active" id="tab-sale">
+      <div class="grid">
+        <div class="card">
+          <h2>Add item</h2>
+          <div class="body">
+            <div class="field">
+              <label>What are you selling?</label>
+              <select id="selCat">
+                <option value="print">Print (by size)</option>
+                <option value="frame">Frame (by size)</option>
+                <option value="albexp">Pictures — New (EXP)</option>
+                <option value="albro">Pictures — Re-order (R.O)</option>
+                <option value="1x1exp">1x1 — New (EXP)</option>
+                <option value="1x1ro">1x1 — Re-order (R.O)</option>
+                <option value="set">Set / combo</option>
+                <option value="misc">Other item</option>
+                <option value="custom">Custom / one-off</option>
+              </select>
+            </div>
+
+            <div class="row r2">
+              <div class="field" id="wSize"><label>Size</label><select id="selSize"></select></div>
+              <div class="field" id="wType"><label>Type</label><select id="selType"></select></div>
+            </div>
+            <div class="field hidden" id="wPages"><label>Count</label><select id="selPages"></select></div>
+            <div class="field hidden" id="wSet"><label>Set</label><select id="selSet"></select></div>
+            <div class="field hidden" id="wMisc"><label>Item</label><select id="selMisc"></select></div>
+            <div class="field hidden" id="wCustom"><label>Description</label><input id="customDesc"
+                placeholder="e.g. photo editing, urgent handling"></div>
+
+            <div class="row r3">
+              <div class="field"><label>Price (Rs)</label><input id="fPrice" class="mono" type="number" min="0" step="1"
+                  placeholder="0"></div>
+              <div class="field"><label>Qty</label><input id="fQty" class="mono" type="number" min="1" step="1"
+                  value="1"></div>
+              <div class="field"><label>Line total</label>
+                <div class="preview-price mono" id="fLine">Rs 0</div>
+              </div>
+            </div>
+            <button class="btn primary block" id="addItem">Add to receipt</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Current receipt</h2>
+          <div class="body">
+            <div id="cart"></div>
+            <div class="total-row"><span class="l">Total</span><span class="v mono" id="cartTotal">Rs 0</span></div>
+            <div class="divider"></div>
+            <div class="field"><label>Served by</label><select id="selStaff"></select></div>
+            <div class="row r2">
+              <div class="field"><label>Customer (optional)</label><input id="fCust" placeholder="Name"></div>
+              <div class="field"><label>Phone (optional)</label><input id="fPhone" class="mono"
+                  placeholder="03xx-xxxxxxx"></div>
+            </div>
+            <div class="divider"></div>
+            <div class="row r2">
+              <div class="field"><label>Paid (Rs)</label><input id="fPaid" class="mono" type="number" min="0" step="1" placeholder="0"></div>
+              <div class="field"><label>Balance (Rs)</label><div class="preview-price mono" id="fBalance">Rs 0</div></div>
+            </div>
+            <div class="stack">
+              <button class="btn primary block" id="saveSale" disabled>Save &amp; print receipt</button>
+              <button class="btn ghost block sm" id="clearCart">Clear receipt</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECORDS -->
+    <section class="panel" id="tab-records">
+      <div class="card">
+        <h2>All sales</h2>
+        <div class="body">
+          <div class="filters">
+            <div style="flex:1"><label>Search</label><input class="search" id="searchBox"
+                placeholder="Receipt no. or customer…"></div>
+            <div><label>Staff</label><select id="filterStaff">
+                <option value="">Everyone</option>
+              </select></div>
+            <div><label>Time Period</label><select id="filterDay">
+                <option value="">All time</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+              </select></div>
+            <div><label>Status</label><select id="filterStatus">
+                <option value="">All sales</option>
+                <option value="balance">Pending balance</option>
+                <option value="paid">Fully paid</option>
+              </select></div>
+          </div>
+          <div id="recordsSummary" class="hint" style="margin-bottom:10px"></div>
+          <div id="recordsWrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRICES -->
+    <section class="panel" id="tab-prices">
+      <div class="card">
+        <h2>Rate list <span class="badge">tap-editable · saved automatically</span></h2>
+        <div class="body">
+          <p class="hint" style="margin-top:0">Edit any number to fix a misread or update a rate. Blank a cell to hide
+            that option from the sale screen.</p>
+          <div class="subhead">Prints</div>
+          <div id="tblPrints" style="overflow-x:auto"></div>
+          <div class="subhead">Frames</div>
+          <div id="tblFrames" style="overflow-x:auto"></div>
+          <div class="subhead">Pictures (per page count)</div>
+          <div id="tblAlbums" style="overflow-x:auto"></div>
+          <div class="subhead">1x1 Photos (per count)</div>
+          <div id="tbl1x1" style="overflow-x:auto"></div>
+          <div class="subhead">Sets / combos</div>
+          <div id="tblSets"></div>
+          <div class="row r3" style="margin-top:12px">
+            <div class="field"><label>New set name</label><input id="setName" placeholder="e.g. 6 PP + 6 1x1 pics">
+            </div>
+            <div class="field"><label>Price</label><input id="setPrice" class="mono" type="number" min="0"
+                placeholder="0"></div>
+            <div class="field"><label>&nbsp;</label><button class="btn ghost block" id="addSet">Add set</button></div>
+          </div>
+          <div class="subhead">Other items</div>
+          <div id="tblMisc"></div>
+          <div class="row r3" style="margin-top:12px">
+            <div class="field"><label>New item name</label><input id="miscName" placeholder="e.g. Lamination"></div>
+            <div class="field"><label>Price</label><input id="miscPrice" class="mono" type="number" min="0"
+                placeholder="0"></div>
+            <div class="field"><label>&nbsp;</label><button class="btn ghost block" id="addMisc">Add item</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAFF -->
+    <section class="panel" id="tab-staff">
+      <div class="grid">
+        <div class="card">
+          <h2>Team</h2>
+          <div class="body">
+            <div id="staffList"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Add a person</h2>
+          <div class="body">
+            <div class="field"><label>Name</label><input id="staffName" placeholder="Name"></div>
+            <button class="btn primary block" id="addStaff">Add to team</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BACKUP -->
+    <section class="panel" id="tab-backup">
+      <div class="grid">
+        <div class="card">
+          <h2>Keep your data safe</h2>
+          <div class="body stack">
+            <p class="hint" style="margin-top:0">Records live in <b>this browser only</b>. Clearing browser data erases
+              them. Export a backup weekly.</p>
+            <button class="btn primary block" id="exportJson">Download full backup (.json)</button>
+            <button class="btn ghost block" id="exportCsv">Download sales as spreadsheet (.csv)</button>
+            <div class="divider"></div>
+            <label>Restore from a .json backup</label>
+            <input type="file" id="importFile" accept="application/json">
+            <p class="hint">Restoring replaces current records with the backup's records.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Danger zone</h2>
+          <div class="body stack">
+            <p class="hint" style="margin-top:0">Wipe all sales and start fresh. Export a backup first.</p>
+            <button class="btn danger block" id="wipeAll">Delete all records</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div>
+      <div id="receipt">
+        <div class="rc-in" id="rcBody"></div>
+      </div>
+      <div class="rc-actions">
+        <button class="btn primary" style="flex:1" id="printBtn">Print</button>
+        <button class="btn primary" style="flex:1;background:var(--accent);display:none" id="markPaidBtn">Mark Paid</button>
+        <button class="btn ghost" style="flex:1" id="closeReceipt">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+      var CUR = "Rs", KEY = "studio_pos_v3";
+      var SIZES = ["4x6", "5x7", "6x8", "6x9", "8x10", "8x12", "10x12", "10x15", "12x16", "12x18", "16x20", "20x24", "24x30", "24x30 (large)"];
+      var PP = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56];
+      var TYPES = [["normal", "Normal EXP"], ["bg", "BG Change"], ["reorder", "Re-order"], ["urgent", "Re-order (Urgent)"]];
+
+      function defaults() {
+        var prints = {
+          "4x6": { normal: 200, bg: 250, reorder: 60, urgent: 100 },
+          "5x7": { normal: 300, bg: 350, reorder: 150, urgent: 200 },
+          "6x8": { normal: 350, bg: 400, reorder: 250, urgent: 300 },
+          "6x9": { normal: 450, bg: 500, reorder: 350 },
+          "8x10": { normal: 650, bg: 700, reorder: 550 },
+          "8x12": { normal: 700, bg: 750, reorder: 600 },
+          "10x12": { normal: 950, bg: 1000, reorder: 800 },
+          "10x15": { normal: 1100, bg: 1150, reorder: 850 },
+          "12x16": { normal: 1400, bg: 1450, reorder: 1200 },
+          "12x18": { normal: 1450, bg: 1500, reorder: 1300 },
+          "16x20": { normal: 2600, bg: 2650, reorder: 2300 },
+          "20x24": { normal: 3600, bg: 3650, reorder: 3000 },
+          "24x30": { normal: 4200, bg: 4250, reorder: 3600 },
+          "24x30 (large)": { normal: 4700, bg: 4750, reorder: 4200 }
+        };
+        var frames = { "4x6": 400, "5x7": 450, "6x8": 500, "6x9": 550, "8x10": 650, "8x12": 700, "10x12": 950, "10x15": 1000, "12x16": 1250, "12x18": 1300, "16x20": 2300, "20x24": 2800, "24x30": 3600, "24x30 (large)": 4200 };
+        var exp = { 4: 200, 8: 250, 12: 300, 16: 350, 20: 400, 24: 450, 28: 500, 32: 550, 36: 600, 40: 650, 44: 700, 48: 750, 52: 800, 56: 850 };
+        var ro = { 4: 150, 8: 200, 12: 250, 16: 300, 20: 350, 24: 400, 28: 450, 32: 500, 36: 550, 40: 600, 44: 650, 48: 700, 52: 750, 56: 800 };
+        var misc = [
+          { name: "1x1 pic — per piece", price: 0 },
+          { name: "PP / Passport photo — per piece", price: 0 },
+          { name: "White Mug", price: 1300 }, { name: "Magic Cup", price: 1600 }, { name: "Any Image Print", price: 20 },
+          { name: "Certificate Paper Print (A4)", price: 450 }, { name: "Scan", price: 40 }, { name: "A4 B&W PDF / Word", price: 10 },
+          { name: "CD", price: 150 }, { name: "DVD", price: 200 }, { name: "Colour Print (SET PRICE)", price: 0 },
+          { name: "R.O 2B Pic", price: 150 },
+          { name: "BG Change (flat)", price: 200 }, { name: "Re-Order PP set on 4R sheet", price: 150 }
+        ];
+        var sets = [{ name: "Set — 4 PP + 4 1x1 pics", price: 250 }];
+        return {
+          studio: "Ideal Photo Studio", counter: 0, sales: [], staff: ["Umar", "Kabeer", "Owner - Usman", "Alex"],
+          lastStaff: "Umar", prints: prints, frames: frames, albumExp: exp, albumRo: ro, oneByOneExp: JSON.parse(JSON.stringify(exp)), oneByOneRo: JSON.parse(JSON.stringify(ro)), sets: sets, misc: misc
+        };
+      }
+      function load() { try { var r = localStorage.getItem(KEY); if (r) { var s = JSON.parse(r); var d = defaults(); for (var k in d) { if (!(k in s)) s[k] = d[k]; } return s; } } catch (e) { } return defaults(); }
+      function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { alert("Could not save — browser may be blocking storage (private mode?)."); } }
+
+      var state = load(), cart = [];
+      var $ = function (id) { return document.getElementById(id); };
+      function money(n) { return CUR + " " + Number(n || 0).toLocaleString("en-PK"); }
+      function pad(n) { return ("0000" + n).slice(-4); }
+      function fmtDate(ts) { var d = new Date(ts); return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); }
+      function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+      function dayKey(ts) { return new Date(ts).toDateString(); }
+      function opt(v, t) { var o = document.createElement("option"); o.value = v; o.textContent = (t == null ? v : t); return o; }
+
+      // header + tabs
+      $("studioName").textContent = state.studio;
+      $("studioName").addEventListener("blur", function () { state.studio = this.textContent.trim() || "Your Studio Name"; this.textContent = state.studio; save(); });
+      var tabBtns = document.querySelectorAll("nav.tabs button");
+      tabBtns.forEach(function (b) {
+        b.addEventListener("click", function () {
+          tabBtns.forEach(function (x) { x.classList.remove("active"); });
+          document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+          b.classList.add("active"); $("tab-" + b.dataset.tab).classList.add("active");
+        });
+      });
+
+      function isSameDay(d1, d2) {
+        return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+      }
+      function isThisWeek(d) {
+        var now = new Date();
+        var diffDays = (now - d) / (1000 * 60 * 60 * 24);
+        return diffDays >= 0 && diffDays <= 7;
+      }
+      function isThisMonth(d) {
+        var now = new Date();
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      }
+
+      var ownerUnlocked = false;
+      function refreshStats() {
+        var now = new Date();
+        var sToday = 0, sWeek = 0, sMonth = 0;
+        state.sales.forEach(function (x) {
+          var d = new Date(x.ts);
+          if (isSameDay(d, now)) sToday += x.total;
+          if (isThisWeek(d)) sWeek += x.total;
+          if (isThisMonth(d)) sMonth += x.total;
+        });
+        $("statToday").textContent = money(sToday);
+        if ($("statWeek")) {
+          if (ownerUnlocked) {
+            $("lblWeek").textContent = "This Week 🔓";
+            $("statWeek").textContent = money(sWeek);
+          } else {
+            $("lblWeek").textContent = "This Week 🔒";
+            $("statWeek").textContent = "••••••";
+          }
+        }
+        if ($("statMonth")) {
+          if (ownerUnlocked) {
+            $("lblMonth").textContent = "This Month 🔓";
+            $("statMonth").textContent = money(sMonth);
+          } else {
+            $("lblMonth").textContent = "This Month 🔒";
+            $("statMonth").textContent = "••••••";
+          }
+        }
+        $("statCount").textContent = state.sales.length;
+      }
+
+      function toggleOwnerLock() {
+        if (ownerUnlocked) {
+          ownerUnlocked = false;
+          refreshStats();
+        } else {
+          var pw = prompt("Enter owner password to view Weekly & Monthly totals:");
+          if (pw === null) return;
+          if (pw === "03045225523") {
+            ownerUnlocked = true;
+            refreshStats();
+          } else {
+            alert("Incorrect password.");
+          }
+        }
+      }
+
+      if ($("boxWeek")) $("boxWeek").addEventListener("click", toggleOwnerLock);
+      if ($("boxMonth")) $("boxMonth").addEventListener("click", toggleOwnerLock);
+
+      // ---------- selector ----------
+      function fillSelect(sel, arr, labelFn) { sel.innerHTML = ""; arr.forEach(function (v) { sel.appendChild(opt(v, labelFn ? labelFn(v) : v)); }); }
+      function buildSelectors() {
+        fillSelect($("selSize"), SIZES);
+        fillSelect($("selPages"), PP, function (p) { return p + "PP"; });
+        var st = $("selSet"); st.innerHTML = ""; state.sets.forEach(function (it, i) { st.appendChild(opt(String(i), it.name + "  —  " + money(it.price))); });
+        var m = $("selMisc"); m.innerHTML = ""; state.misc.forEach(function (it, i) { m.appendChild(opt(String(i), it.name + "  —  " + money(it.price))); });
+      }
+      function buildTypeOptions() {
+        var size = $("selSize").value, p = state.prints[size] || {}, sel = $("selType"); sel.innerHTML = "";
+        TYPES.forEach(function (t) { if (p[t[0]] != null && p[t[0]] !== "" && Number(p[t[0]]) >= 0 && (t[0] in p)) { sel.appendChild(opt(t[0], t[1])); } });
+      }
+      function currentLabelPrice() {
+        var cat = $("selCat").value, label = "", price = 0, meta = "";
+        if (cat === "print") { var size = $("selSize").value, ty = $("selType").value, tl = (TYPES.filter(function (t) { return t[0] === ty; })[0] || ["", ""])[1]; label = size + " — " + tl; meta = "Print"; price = Number((state.prints[size] || {})[ty]) || 0; }
+        else if (cat === "frame") { var s2 = $("selSize").value; label = s2 + " Frame"; meta = "Frame"; price = Number(state.frames[s2]) || 0; }
+        else if (cat === "albexp") { var pg = $("selPages").value; label = "Pictures " + pg + "PP (New)"; meta = "Pictures"; price = Number(state.albumExp[pg]) || 0; }
+        else if (cat === "albro") { var pg2 = $("selPages").value; label = "Pictures " + pg2 + "PP (Re-order)"; meta = "Pictures"; price = Number(state.albumRo[pg2]) || 0; }
+        else if (cat === "1x1exp") { var pg3 = $("selPages").value; label = pg3 + " 1x1 (New)"; meta = "1x1"; price = Number(state.oneByOneExp[pg3]) || 0; }
+        else if (cat === "1x1ro") { var pg4 = $("selPages").value; label = pg4 + " 1x1 (Re-order)"; meta = "1x1"; price = Number(state.oneByOneRo[pg4]) || 0; }
+        else if (cat === "set") { var st0 = state.sets[Number($("selSet").value)] || { name: "", price: 0 }; label = st0.name; meta = "Set"; price = Number(st0.price) || 0; }
+        else if (cat === "misc") { var it = state.misc[Number($("selMisc").value)] || { name: "", price: 0 }; label = it.name; meta = "Item"; price = Number(it.price) || 0; }
+        else { label = $("customDesc").value.trim(); meta = "Custom"; price = Number($("fPrice").value) || 0; }
+        return { label: label, price: price, meta: meta, cat: cat };
+      }
+      function syncCategoryUI() {
+        var cat = $("selCat").value;
+        $("wSize").classList.toggle("hidden", !(cat === "print" || cat === "frame"));
+        $("wType").classList.toggle("hidden", cat !== "print");
+        $("wPages").classList.toggle("hidden", !(cat === "albexp" || cat === "albro" || cat === "1x1exp" || cat === "1x1ro"));
+        $("wSet").classList.toggle("hidden", cat !== "set");
+        $("wMisc").classList.toggle("hidden", cat !== "misc");
+        $("wCustom").classList.toggle("hidden", cat !== "custom");
+        if (cat === "print") buildTypeOptions();
+        refreshPrice();
+      }
+      function refreshPrice() {
+        var cp = currentLabelPrice();
+        if ($("selCat").value !== "custom") { $("fPrice").value = cp.price; }
+        updateLine();
+      }
+      function updateLine() { var lt = (Number($("fPrice").value) || 0) * (Number($("fQty").value) || 0); $("fLine").textContent = money(lt); }
+
+      $("selCat").addEventListener("change", syncCategoryUI);
+      $("selSize").addEventListener("change", function () { if ($("selCat").value === "print") buildTypeOptions(); refreshPrice(); });
+      $("selType").addEventListener("change", refreshPrice);
+      $("selPages").addEventListener("change", refreshPrice);
+      $("selSet").addEventListener("change", refreshPrice);
+
+      $("selMisc").addEventListener("change", refreshPrice);
+      $("customDesc").addEventListener("input", updateLine);
+      $("fPrice").addEventListener("input", updateLine);
+      $("fQty").addEventListener("input", updateLine);
+
+      $("addItem").addEventListener("click", function () {
+        var cp = currentLabelPrice();
+        var price = Number($("fPrice").value) || 0, qty = Number($("fQty").value) || 0;
+        if (!cp.label) { alert("Add a description first."); return; }
+        if (qty < 1) { $("fQty").focus(); return; }
+        addToCart(cp.label, cp.meta, price, qty);
+        if ($("selCat").value === "custom") $("customDesc").value = "";
+        $("fQty").value = 1; refreshPrice();
+      });
+
+      function addToCart(label, cat, price, qty) {
+        qty = qty || 1;
+        var ex = cart.filter(function (l) { return l.label === label && l.price === price; })[0];
+        if (ex) { ex.qty += qty; } else { cart.push({ label: label, cat: cat, price: price, qty: qty }); }
+        renderCart();
+      }
+
+
+      function renderCart() {
+        var el = $("cart");
+        if (!cart.length) { el.innerHTML = '<div class="cart-empty">No items yet — add one on the left.</div>'; }
+        else {
+          el.innerHTML = ""; cart.forEach(function (it, i) {
+            var row = document.createElement("div"); row.className = "line";
+            row.innerHTML = '<div class="d"><div class="t">' + esc(it.label) + '</div><div class="m">' + esc(it.cat) + ' · ' + it.qty + ' × ' + money(it.price) + '</div></div><div class="amt mono">' + money(it.price * it.qty) + '</div><button class="x" title="Remove">×</button>';
+            row.querySelector(".x").addEventListener("click", function () { cart.splice(i, 1); renderCart(); });
+            el.appendChild(row);
+          });
+        }
+        var total = cart.reduce(function (a, it) { return a + it.price * it.qty; }, 0);
+        $("cartTotal").textContent = money(total); $("saveSale").disabled = cart.length === 0;
+        updateBalance();
+      }
+      function updateBalance() {
+        var total = cart.reduce(function (a, it) { return a + it.price * it.qty; }, 0);
+        var paid = Number($("fPaid").value) || 0;
+        var bal = total - paid;
+        $("fBalance").textContent = money(bal < 0 ? 0 : bal);
+        $("fBalance").style.color = bal > 0 ? 'var(--danger)' : 'var(--accent)';
+      }
+      $("fPaid").addEventListener("input", updateBalance);
+      $("clearCart").addEventListener("click", function () { if (cart.length && !confirm("Clear all items on this receipt?")) return; cart = []; $("fCust").value = ""; $("fPhone").value = ""; $("fPaid").value = ""; renderCart(); });
+
+      $("saveSale").addEventListener("click", function () {
+        if (!cart.length) return;
+        state.counter += 1; state.lastStaff = $("selStaff").value;
+        var total = cart.reduce(function (a, it) { return a + it.price * it.qty; }, 0);
+        var paid = Number($("fPaid").value) || 0;
+        var balance = total - paid;
+        if (balance < 0) balance = 0;
+        var sale = { id: "R-" + pad(state.counter), ts: Date.now(), staff: $("selStaff").value, customer: $("fCust").value.trim(), phone: $("fPhone").value.trim(), items: cart.slice(), total: total, paid: paid, balance: balance };
+        state.sales.unshift(sale); save();
+        cart = []; $("fCust").value = ""; $("fPhone").value = ""; $("fPaid").value = ""; renderCart(); refreshStats(); renderRecords(); showReceipt(sale);
+      });
+
+      // ---------- receipt ----------
+      function receiptHTML(s) {
+        var items = s.items.map(function (it) { return '<div class="rc-item"><div class="top"><span>' + esc(it.label) + '</span><span>' + money(it.price * it.qty) + '</span></div><div class="sub">' + it.qty + ' × ' + money(it.price) + '</div></div>'; }).join("");
+        var paid = s.paid != null ? s.paid : s.total;
+        var balance = s.balance != null ? s.balance : 0;
+        return '<div class="rc-c rc-name">' + esc(state.studio) + '</div>' +
+          '<div class="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>' +
+          '<div class="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5005990</div>' +
+          '<div class="rc-c rc-small">Sales Receipt</div><div class="rc-sep"></div>' +
+          '<div class="rc-row"><span>Receipt</span><span>' + esc(s.id) + '</span></div>' +
+          '<div class="rc-row"><span>Date</span><span>' + fmtDate(s.ts) + '</span></div>' +
+          (s.staff ? '<div class="rc-row"><span>Served by</span><span>' + esc(s.staff) + '</span></div>' : '') +
+          (s.customer ? '<div class="rc-row"><span>Customer</span><span>' + esc(s.customer) + '</span></div>' : '') +
+          (s.phone ? '<div class="rc-row"><span>Phone</span><span>' + esc(s.phone) + '</span></div>' : '') +
+          '<div class="rc-sep"></div>' + items + '<div class="rc-sep"></div>' +
+          '<div class="rc-total"><span>TOTAL</span><span>' + money(s.total) + '</span></div>' +
+          '<div class="rc-row" style="margin-top:4px"><span>Paid</span><span>' + money(paid) + '</span></div>' +
+          (balance > 0 ? '<div class="rc-row" style="font-weight:700"><span>BALANCE</span><span>' + money(balance) + '</span></div>' : '') +
+          '<div class="rc-foot">Thank you for your business.<br>Made By Lunar Ai</div>';
+      }
+      var currentModalSale = null;
+      function showReceipt(s) {
+        currentModalSale = s;
+        $("rcBody").innerHTML = receiptHTML(s);
+        $("overlay").classList.add("show");
+        var mpBtn = $("markPaidBtn");
+        var bal = s.balance != null ? s.balance : 0;
+        if (bal > 0) {
+          mpBtn.style.display = "inline-block";
+          mpBtn.onclick = function () {
+            s.paid = s.total;
+            s.balance = 0;
+            save();
+            showReceipt(s);
+            renderRecords();
+            refreshStats();
+          };
+        } else {
+          mpBtn.style.display = "none";
+        }
+      }
+      $("printBtn").addEventListener("click", function () { window.print(); });
+      $("closeReceipt").addEventListener("click", function () { $("overlay").classList.remove("show"); });
+      $("overlay").addEventListener("click", function (e) { if (e.target === $("overlay")) $("overlay").classList.remove("show"); });
+
+      // ---------- records ----------
+      function renderRecords() {
+        var q = ($("searchBox").value || "").toLowerCase().trim();
+        var fs = $("filterStaff").value, fd = $("filterDay").value, fst = $("filterStatus").value, now = new Date();
+        var list = state.sales.filter(function (s) {
+          var d = new Date(s.ts);
+          if (fs && s.staff !== fs) return false;
+          if (fd === "today" && !isSameDay(d, now)) return false;
+          if (fd === "week" && !isThisWeek(d)) return false;
+          if (fd === "month" && !isThisMonth(d)) return false;
+          var bal = s.balance != null ? s.balance : 0;
+          if (fst === "balance" && bal <= 0) return false;
+          if (fst === "paid" && bal > 0) return false;
+          if (q && s.id.toLowerCase().indexOf(q) < 0 && (s.customer || "").toLowerCase().indexOf(q) < 0) return false;
+          return true;
+        });
+        var sum = list.reduce(function (a, s) { return a + s.total; }, 0);
+        var sumBal = list.reduce(function (a, s) { return a + (s.balance || 0); }, 0);
+        $("recordsSummary").innerHTML = list.length ? ('<b>' + list.length + '</b> sale(s) · total <b class="mono">' + money(sum) + '</b>' + (sumBal > 0 ? ' · pending balance <b class="mono" style="color:var(--danger)">' + money(sumBal) + '</b>' : '')) : '';
+        var wrap = $("recordsWrap");
+        if (!state.sales.length) { wrap.innerHTML = '<div class="empty-state"><div class="big">No sales yet</div>Log your first sale on the New sale tab.</div>'; return; }
+        if (!list.length) { wrap.innerHTML = '<div class="empty-state">No matching sales.</div>'; return; }
+        var rows = list.map(function (s) {
+          var paid = s.paid != null ? s.paid : s.total;
+          var bal = s.balance != null ? s.balance : 0;
+          var balTd = bal > 0 ? '<span class="mono" style="color:var(--danger);font-weight:700">' + money(bal) + '</span>' : '<span style="color:var(--accent);font-weight:600">Paid</span>';
+          var actTd = bal > 0 ? '<button class="btn primary sm mark-paid-btn" data-id="' + esc(s.id) + '">Mark Paid</button>' : '<span style="color:var(--muted)">—</span>';
+          return '<tr class="click" data-id="' + esc(s.id) + '"><td class="mono">' + esc(s.id) + '</td><td>' + fmtDate(s.ts) + '</td><td>' + (s.staff ? esc(s.staff) : '—') + '</td><td>' + (s.customer ? esc(s.customer) : '<span style="color:var(--muted)">—</span>') + '</td><td class="num mono">' + money(s.total) + '</td><td class="num mono">' + money(paid) + '</td><td class="num">' + balTd + '</td><td style="text-align:center">' + actTd + '</td></tr>';
+        }).join("");
+        wrap.innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>Receipt</th><th>Date</th><th>Staff</th><th>Customer</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th style="text-align:center">Action</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+        wrap.querySelectorAll("tbody tr").forEach(function (tr) {
+          tr.addEventListener("click", function (e) {
+            if (e.target.classList.contains("mark-paid-btn")) return;
+            var s = state.sales.find(function (x) { return x.id === tr.dataset.id; });
+            if (s) showReceipt(s);
+          });
+        });
+        wrap.querySelectorAll(".mark-paid-btn").forEach(function (btn) {
+          btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var s = state.sales.find(function (x) { return x.id === btn.dataset.id; });
+            if (s) {
+              s.paid = s.total;
+              s.balance = 0;
+              save();
+              renderRecords();
+              refreshStats();
+            }
+          });
+        });
+      }
+      $("searchBox").addEventListener("input", renderRecords);
+      $("filterStaff").addEventListener("change", renderRecords);
+      $("filterDay").addEventListener("change", renderRecords);
+      $("filterStatus").addEventListener("change", renderRecords);
+
+      // ---------- prices editing ----------
+      function priceInput(get, set) { var i = document.createElement("input"); i.type = "number"; i.min = "0"; i.className = "price-in mono"; i.value = (get() === 0 || get() ? get() : ""); i.addEventListener("change", function () { set(i.value === "" ? "" : Number(i.value) || 0); save(); buildSelectors(); if ($("selCat").value === "print") buildTypeOptions(); refreshPrice(); }); return i; }
+      function renderPrices() {
+        // prints
+        var t = document.createElement("table"); var head = "<tr><th>Size</th>"; TYPES.forEach(function (x) { head += "<th class='num'>" + x[1] + "</th>"; }); head += "</tr>";
+        var tb = document.createElement("tbody");
+        SIZES.forEach(function (sz) {
+          var tr = document.createElement("tr"); tr.innerHTML = "<td><b>" + esc(sz) + "</b></td>";
+          TYPES.forEach(function (x) {
+            var td = document.createElement("td"); td.className = "num";
+            td.appendChild(priceInput(function () { return (state.prints[sz] || (state.prints[sz] = {}))[x[0]]; }, function (v) { state.prints[sz][x[0]] = v; })); tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+        t.innerHTML = "<thead>" + head + "</thead>"; t.appendChild(tb); $("tblPrints").innerHTML = ""; $("tblPrints").appendChild(t);
+        // frames
+        var tf = document.createElement("table"); tf.innerHTML = "<thead><tr><th>Size</th><th class='num'>Frame price</th></tr></thead>"; var fb = document.createElement("tbody");
+        SIZES.forEach(function (sz) { var tr = document.createElement("tr"); tr.innerHTML = "<td><b>" + esc(sz) + "</b></td>"; var td = document.createElement("td"); td.className = "num"; td.appendChild(priceInput(function () { return state.frames[sz]; }, function (v) { state.frames[sz] = v; })); tr.appendChild(td); fb.appendChild(tr); });
+        tf.appendChild(fb); $("tblFrames").innerHTML = ""; $("tblFrames").appendChild(tf);
+        // albums
+        var ta = document.createElement("table"); ta.innerHTML = "<thead><tr><th>Pages</th><th class='num'>New (EXP)</th><th class='num'>Re-order (R.O)</th></tr></thead>"; var ab = document.createElement("tbody");
+        PP.forEach(function (pg) {
+          var tr = document.createElement("tr"); tr.innerHTML = "<td><b>" + pg + "PP</b></td>";
+          var t1 = document.createElement("td"); t1.className = "num"; t1.appendChild(priceInput(function () { return state.albumExp[pg]; }, function (v) { state.albumExp[pg] = v; }));
+          var t2 = document.createElement("td"); t2.className = "num"; t2.appendChild(priceInput(function () { return state.albumRo[pg]; }, function (v) { state.albumRo[pg] = v; }));
+          tr.appendChild(t1); tr.appendChild(t2); ab.appendChild(tr);
+        });
+        ta.appendChild(ab); $("tblAlbums").innerHTML = ""; $("tblAlbums").appendChild(ta);
+        // 1x1
+        var t1x1 = document.createElement("table"); t1x1.innerHTML = "<thead><tr><th>Count</th><th class='num'>New (EXP)</th><th class='num'>Re-order (R.O)</th></tr></thead>"; var ob = document.createElement("tbody");
+        PP.forEach(function (pg) {
+          var tr = document.createElement("tr"); tr.innerHTML = "<td><b>" + pg + " 1x1</b></td>";
+          var t1 = document.createElement("td"); t1.className = "num"; t1.appendChild(priceInput(function () { return state.oneByOneExp[pg]; }, function (v) { state.oneByOneExp[pg] = v; }));
+          var t2 = document.createElement("td"); t2.className = "num"; t2.appendChild(priceInput(function () { return state.oneByOneRo[pg]; }, function (v) { state.oneByOneRo[pg] = v; }));
+          tr.appendChild(t1); tr.appendChild(t2); ob.appendChild(tr);
+        });
+        t1x1.appendChild(ob); $("tbl1x1").innerHTML = ""; $("tbl1x1").appendChild(t1x1);
+        // sets
+        var els = $("tblSets"); els.innerHTML = "";
+        state.sets.forEach(function (it, i) {
+          var row = document.createElement("div"); row.className = "line";
+          row.innerHTML = '<div class="d"><div class="t">' + esc(it.name) + '</div></div>';
+          var pin = priceInput(function () { return it.price; }, function (v) { it.price = Number(v) || 0; }); pin.style.marginRight = "8px";
+          var x = document.createElement("button"); x.className = "x"; x.textContent = "×"; x.title = "Remove";
+          x.addEventListener("click", function () { state.sets.splice(i, 1); save(); renderPrices(); buildSelectors(); });
+          row.appendChild(pin); row.appendChild(x); els.appendChild(row);
+        });
+        // misc
+        var el = $("tblMisc"); el.innerHTML = "";
+        state.misc.forEach(function (it, i) {
+          var row = document.createElement("div"); row.className = "line";
+          row.innerHTML = '<div class="d"><div class="t">' + esc(it.name) + '</div></div>';
+          var pin = priceInput(function () { return it.price; }, function (v) { it.price = Number(v) || 0; }); pin.style.marginRight = "8px";
+          var x = document.createElement("button"); x.className = "x"; x.textContent = "×"; x.title = "Remove";
+          x.addEventListener("click", function () { state.misc.splice(i, 1); save(); renderPrices(); buildSelectors(); });
+          row.appendChild(pin); row.appendChild(x); el.appendChild(row);
+        });
+      }
+      $("addSet").addEventListener("click", function () { var n = $("setName").value.trim(); if (!n) { $("setName").focus(); return; } state.sets.push({ name: n, price: Number($("setPrice").value) || 0 }); $("setName").value = ""; $("setPrice").value = ""; save(); renderPrices(); buildSelectors(); });
+      $("addMisc").addEventListener("click", function () { var n = $("miscName").value.trim(); if (!n) { $("miscName").focus(); return; } state.misc.push({ name: n, price: Number($("miscPrice").value) || 0 }); $("miscName").value = ""; $("miscPrice").value = ""; save(); renderPrices(); buildSelectors(); });
+
+      // ---------- staff ----------
+      function renderStaffSelects() {
+        var s = $("selStaff"); s.innerHTML = ""; state.staff.forEach(function (n) { s.appendChild(opt(n)); });
+        if (state.lastStaff && state.staff.indexOf(state.lastStaff) >= 0) s.value = state.lastStaff;
+        var f = $("filterStaff"); var cur = f.value; f.innerHTML = '<option value="">Everyone</option>'; state.staff.forEach(function (n) { f.appendChild(opt(n)); }); f.value = cur;
+      }
+      function renderStaffList() {
+        var el = $("staffList"); if (!state.staff.length) { el.innerHTML = '<div class="empty-state">No staff yet.</div>'; return; }
+        el.innerHTML = ""; state.staff.forEach(function (n, i) {
+          var row = document.createElement("div"); row.className = "line";
+          row.innerHTML = '<div class="d"><div class="t">' + esc(n) + '</div></div><button class="x" title="Remove">×</button>';
+          row.querySelector(".x").addEventListener("click", function () { if (!confirm("Remove " + n + "?")) return; state.staff.splice(i, 1); save(); renderStaffList(); renderStaffSelects(); });
+          el.appendChild(row);
+        });
+      }
+      $("addStaff").addEventListener("click", function () { var n = $("staffName").value.trim(); if (!n) return; if (state.staff.indexOf(n) < 0) state.staff.push(n); $("staffName").value = ""; save(); renderStaffList(); renderStaffSelects(); });
+
+      // ---------- backup ----------
+      function download(fn, txt, type) { var b = new Blob([txt], { type: type }); var u = URL.createObjectURL(b); var a = document.createElement("a"); a.href = u; a.download = fn; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(u); }, 500); }
+      $("exportJson").addEventListener("click", function () { download("studio-backup-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(state, null, 2), "application/json"); });
+      $("exportCsv").addEventListener("click", function () {
+        var rows = [["Receipt", "Date", "Time", "Staff", "Customer", "Phone", "Category", "Item", "Qty", "Unit price", "Line total", "Receipt total"]];
+        state.sales.slice().reverse().forEach(function (s) { var d = new Date(s.ts); s.items.forEach(function (it) { rows.push([s.id, d.toLocaleDateString("en-GB"), d.toLocaleTimeString("en-GB"), s.staff || "", s.customer || "", s.phone || "", it.cat, it.label, it.qty, it.price, it.price * it.qty, s.total]); }); });
+        var csv = rows.map(function (r) { return r.map(function (c) { c = String(c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(","); }).join("\n");
+        download("studio-sales-" + new Date().toISOString().slice(0, 10) + ".csv", csv, "text/csv");
+      });
+      $("importFile").addEventListener("change", function () { var f = this.files[0]; if (!f) return; var rd = new FileReader(); rd.onload = function () { try { var s = JSON.parse(rd.result); if (!s.sales) throw 0; if (!confirm("Restore this backup? It replaces your current " + state.sales.length + " record(s).")) return; var d = defaults(); for (var k in d) { if (!(k in s)) s[k] = d[k]; } state = s; save(); $("studioName").textContent = state.studio; bootRender(); alert("Restored " + state.sales.length + " record(s)."); } catch (e) { alert("That file doesn't look like a valid backup."); } $("importFile").value = ""; }; rd.readAsText(f); });
+      $("wipeAll").addEventListener("click", function () {
+        var pw = prompt("Enter owner password to delete all records:");
+        if (pw === null) return;
+        if (pw !== "03045225523") { alert("Incorrect password."); return; }
+        if (!confirm("Delete ALL records? This cannot be undone.")) return;
+        if (!confirm("Really sure? Export a backup first if you haven't.")) return;
+        state.sales = []; state.counter = 0; save(); refreshStats(); renderRecords();
+      });
+
+      // ---------- boot ----------
+      function bootRender() { buildSelectors(); syncCategoryUI(); renderCart(); renderRecords(); renderPrices(); renderStaffList(); renderStaffSelects(); refreshStats(); }
+      bootRender();
+    })();
+  </script>
+</body>
+
+</html>
