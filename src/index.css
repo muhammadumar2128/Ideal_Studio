@@ -759,20 +759,27 @@ tr.click:hover {
   }
 }
 
-/* PRINT STYLES FOR THERMAL RECEIPT PRINTERS (80mm Roll) */
+/* PRINT STYLES FOR THERMAL RECEIPT PRINTERS (Black Copper BC-95AC / 80mm Roll) */
 @media print {
   @page {
     size: 80mm auto;
-    margin: 0;
+    margin: 0mm !important;
   }
 
   html,
   body {
-    width: 80mm;
+    width: 80mm !important;
+    height: auto !important;
+    max-height: 100% !important;
     background: #FFFFFF !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: hidden !important;
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+    break-after: avoid !important;
+    break-before: avoid !important;
   }
 
   /* Hide all background UI elements when printing */
@@ -790,8 +797,9 @@ tr.click:hover {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 76mm !important;
-    max-width: 76mm !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    height: auto !important;
     box-shadow: none !important;
     border-radius: 0 !important;
     border: none !important;
@@ -799,6 +807,10 @@ tr.click:hover {
     padding: 0 !important;
     background: #FFFFFF !important;
     color: #000000 !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    break-inside: avoid !important;
   }
 
   .overlay {
@@ -808,6 +820,7 @@ tr.click:hover {
     padding: 0 !important;
     margin: 0 !important;
     overflow: visible !important;
+    height: auto !important;
   }
 
   .rc-actions {
@@ -822,7 +835,7 @@ tr.click:hover {
   }
 
   .rc-in {
-    padding: 2mm 2mm 4mm !important;
+    padding: 1mm 1.5mm 2mm !important;
     color: #000000 !important;
     font-size: 12px !important;
     font-weight: 700 !important;
