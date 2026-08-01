@@ -649,7 +649,7 @@ export default function App() {
                 </div>
               )}
               <div className="rc-foot">
-                Thank you for your business.<br />Powered By Lunar Ai
+                Please keep this receipt for photo collection. Thank you!<br />Powered By Lunar Ai
               </div>
             </div>
           </div>
