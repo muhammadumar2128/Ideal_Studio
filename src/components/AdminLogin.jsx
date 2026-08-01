@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabaseClient.js';
 
 export default function AdminLogin({ onLoginSuccess, onClose }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -11,33 +11,39 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!email.trim() || !password.trim()) {
-      setErrorMsg('Please enter both email and password.');
+    const inputUser = username.trim().toLowerCase();
+    const inputPass = password.trim();
+
+    if (!inputUser || !inputPass) {
+      setErrorMsg('Please enter both username and password.');
       return;
     }
 
     setLoading(true);
 
+    // Convert 'admin' to admin email format for Supabase Auth if needed
+    const authEmail = inputUser === 'admin' ? 'admin@idealstudio.com' : (inputUser.includes('@') ? inputUser : `${inputUser}@idealstudio.com`);
+
     if (supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password.trim()
+          email: authEmail,
+          password: inputPass
         });
 
         if (error) {
-          // Fallback check for default master password if auth user hasn't been created yet in Supabase
-          if (password === '03045225523') {
-            onLoginSuccess({ email: email.trim() || 'admin@idealstudio.com' });
+          // Master fallback check for admin username & password
+          if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
+            onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
             return;
           }
-          setErrorMsg(error.message || 'Invalid login credentials.');
+          setErrorMsg('Invalid admin username or password.');
         } else if (data?.user) {
-          onLoginSuccess(data.user);
+          onLoginSuccess({ ...data.user, username: 'admin' });
         }
       } catch (err) {
-        if (password === '03045225523') {
-          onLoginSuccess({ email: email.trim() || 'admin@idealstudio.com' });
+        if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
+          onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
           return;
         }
         setErrorMsg('Authentication error. Check network or credentials.');
@@ -45,9 +51,9 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
         setLoading(false);
       }
     } else {
-      // Local fallback mode using master password
-      if (password === '03045225523') {
-        onLoginSuccess({ email: email.trim() || 'admin@idealstudio.com' });
+      // Local fallback mode
+      if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === '03045225523') {
+        onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
       } else {
         setErrorMsg('Incorrect admin password.');
       }
@@ -64,7 +70,7 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
         </h2>
         <div className="body">
           <p className="hint" style={{ marginTop: 0, marginBottom: '16px' }}>
-            Sign in to access business analytics, graphs, and complete administrative controls.
+            Enter your admin username and password to access the executive dashboard.
           </p>
 
           {errorMsg && (
@@ -83,13 +89,14 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
 
           <form onSubmit={handleLogin}>
             <div className="field">
-              <label>Admin Email</label>
+              <label>Admin Username</label>
               <input
-                type="email"
-                placeholder="admin@idealstudio.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="admin"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
+                autoCapitalize="none"
               />
             </div>
 
