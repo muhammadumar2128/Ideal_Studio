@@ -11,8 +11,21 @@ function fmtDate(ts) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
+function fmtMonthKey(monthKey) {
+  if (!monthKey) return '';
+  const [y, m] = monthKey.split('-');
+  const date = new Date(Number(y), Number(m) - 1, 1);
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
 function isSameDay(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+
+function isYesterday(d) {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return isSameDay(d, yesterday);
 }
 
 function isThisWeek(d) {
@@ -21,9 +34,21 @@ function isThisWeek(d) {
   return diffDays >= 0 && diffDays <= 7;
 }
 
+function isLastWeek(d) {
+  const now = new Date();
+  const diffDays = (now - d) / (1000 * 60 * 60 * 24);
+  return diffDays > 7 && diffDays <= 14;
+}
+
 function isThisMonth(d) {
   const now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+
+function isLastMonth(d) {
+  const now = new Date();
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return d.getFullYear() === lastMonth.getFullYear() && d.getMonth() === lastMonth.getMonth();
 }
 
 export default function AdminDashboard({
@@ -42,6 +67,10 @@ export default function AdminDashboard({
   setActiveModalSale
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
+
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
 
   // Form states for new items, sets, staff, and expenses
   const [newSetName, setNewSetName] = useState('');
@@ -64,15 +93,27 @@ export default function AdminDashboard({
   const [filterStatus, setFilterStatus] = useState('');
 
   // Calculated Metrics
-  const now = new Date();
   const salesList = state.sales || [];
   const expensesList = state.expenses || [];
 
-  let sToday = 0, sWeek = 0, sMonth = 0, sTotalAll = 0, totalPendingBal = 0, paidCount = 0;
-  let expToday = 0, expWeek = 0, expMonth = 0, expTotalAll = 0;
+  let sToday = 0, sYesterday = 0, sWeek = 0, sLastWeek = 0, sMonth = 0, sLastMonth = 0, sTotalAll = 0, totalPendingBal = 0, paidCount = 0;
+  let expToday = 0, expYesterday = 0, expWeek = 0, expLastWeek = 0, expMonth = 0, expLastMonth = 0, expTotalAll = 0;
 
   const categoryTotals = { Print: 0, Frame: 0, Pictures: 0, '1x1': 0, Set: 0, Item: 0, Custom: 0 };
   const staffPerformance = {};
+
+  // Extract all available YYYY-MM keys from transactions & expenses
+  const availableMonthsSet = new Set([currentMonthKey]);
+  salesList.forEach(s => {
+    const d = new Date(s.ts);
+    availableMonthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  });
+  expensesList.forEach(e => {
+    const d = new Date(e.ts);
+    availableMonthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  });
+
+  const availableMonths = Array.from(availableMonthsSet).sort().reverse();
 
   // Sales aggregation
   salesList.forEach(s => {
@@ -86,8 +127,11 @@ export default function AdminDashboard({
     if (bal <= 0) paidCount++;
 
     if (isSameDay(d, now)) sToday += total;
+    if (isYesterday(d)) sYesterday += total;
     if (isThisWeek(d)) sWeek += total;
+    if (isLastWeek(d)) sLastWeek += total;
     if (isThisMonth(d)) sMonth += total;
+    if (isLastMonth(d)) sLastMonth += total;
 
     // Staff aggregation
     const staffName = s.staff || 'Unknown';
@@ -116,16 +160,42 @@ export default function AdminDashboard({
     const d = new Date(e.ts);
     const amt = Number(e.amount || 0);
     expTotalAll += amt;
+
     if (isSameDay(d, now)) expToday += amt;
+    if (isYesterday(d)) expYesterday += amt;
     if (isThisWeek(d)) expWeek += amt;
+    if (isLastWeek(d)) expLastWeek += amt;
     if (isThisMonth(d)) expMonth += amt;
+    if (isLastMonth(d)) expLastMonth += amt;
   });
 
   // Net Income calculations (Sales Revenue - Daily Expenses)
   const netToday = sToday - expToday;
+  const netYesterday = sYesterday - expYesterday;
   const netWeek = sWeek - expWeek;
+  const netLastWeek = sLastWeek - expLastWeek;
   const netMonth = sMonth - expMonth;
+  const netLastMonth = sLastMonth - expLastMonth;
   const netTotalAll = sTotalAll - expTotalAll;
+
+  // Specific Selected Month Inspector Calculations
+  const selectedSales = salesList.filter(s => {
+    const d = new Date(s.ts);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return ym === selectedMonthKey;
+  });
+
+  const selectedExpenses = expensesList.filter(e => {
+    const d = new Date(e.ts);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return ym === selectedMonthKey;
+  });
+
+  const selGrossSales = selectedSales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const selExpenses = selectedExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const selNetProfit = selGrossSales - selExpenses;
+  const selOrderCount = selectedSales.length;
+  const selAvgOrder = selOrderCount > 0 ? Math.round(selGrossSales / selOrderCount) : 0;
 
   const totalSalesCount = salesList.length;
   const avgOrderValue = totalSalesCount > 0 ? Math.round(sTotalAll / totalSalesCount) : 0;
@@ -161,13 +231,27 @@ export default function AdminDashboard({
   const catEntries = Object.entries(categoryTotals).filter(([, val]) => val > 0);
   const totalCatRevenue = catEntries.reduce((a, [, v]) => a + v, 0) || 1;
 
+  // Match period helper for tables
+  const matchPeriod = (d, filterVal) => {
+    if (!filterVal) return true;
+    if (filterVal === "today") return isSameDay(d, now);
+    if (filterVal === "yesterday") return isYesterday(d);
+    if (filterVal === "week") return isThisWeek(d);
+    if (filterVal === "last_week") return isLastWeek(d);
+    if (filterVal === "month") return isThisMonth(d);
+    if (filterVal === "last_month") return isLastMonth(d);
+    if (filterVal === "selected_month") {
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return ym === selectedMonthKey;
+    }
+    return true;
+  };
+
   // Filtered Sales for Audit
   const filteredSales = salesList.filter(s => {
     const d = new Date(s.ts);
     if (filterStaff && s.staff !== filterStaff) return false;
-    if (filterDay === "today" && !isSameDay(d, now)) return false;
-    if (filterDay === "week" && !isThisWeek(d)) return false;
-    if (filterDay === "month" && !isThisMonth(d)) return false;
+    if (!matchPeriod(d, filterDay)) return false;
     const bal = s.balance != null ? s.balance : 0;
     if (filterStatus === "balance" && bal <= 0) return false;
     if (filterStatus === "paid" && bal > 0) return false;
@@ -180,9 +264,7 @@ export default function AdminDashboard({
   const filteredExpenses = expensesList.filter(e => {
     const d = new Date(e.ts);
     if (filterStaff && e.staff !== filterStaff) return false;
-    if (filterDay === "today" && !isSameDay(d, now)) return false;
-    if (filterDay === "week" && !isThisWeek(d)) return false;
-    if (filterDay === "month" && !isThisMonth(d)) return false;
+    if (!matchPeriod(d, filterDay)) return false;
     const q = searchBox.toLowerCase().trim();
     if (q && e.title.toLowerCase().indexOf(q) < 0 && (e.category || "").toLowerCase().indexOf(q) < 0) return false;
     return true;
@@ -263,7 +345,7 @@ export default function AdminDashboard({
               <span className="badge" style={{ background: '#2563EB', color: '#FFFFFF', fontWeight: 700 }}>PRO</span>
             </div>
             <div style={{ color: '#94A3B8', fontSize: '13.5px', marginTop: '4px' }}>
-              Real-time sales revenue, expense tracking, net profit, and control center.
+              Real-time sales revenue, expense tracking, net profit, and historical monthly archives.
             </div>
           </div>
           <button className="btn danger sm" onClick={onLogout} style={{ borderRadius: '8px' }}>
@@ -273,7 +355,7 @@ export default function AdminDashboard({
       </div>
 
       {/* TOP FINANCIAL KPI CARDS */}
-      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+      <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         
         {/* TODAY GROSS SALES */}
         <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #2563EB' }}>
@@ -298,20 +380,20 @@ export default function AdminDashboard({
           <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Sales minus Expenses</div>
         </div>
 
+        {/* THIS WEEK NET INCOME */}
+        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: `4px solid ${netWeek >= 0 ? '#059669' : '#DC2626'}` }}>
+          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Week Net Income</div>
+          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: netWeek >= 0 ? '#059669' : '#DC2626', marginTop: '4px' }}>
+            {money(netWeek)}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Past 7 days Net Profit</div>
+        </div>
+
         {/* THIS MONTH NET INCOME */}
         <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #7C3AED' }}>
           <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Month Net Income</div>
           <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#7C3AED', marginTop: '4px' }}>{money(netMonth)}</div>
           <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Sales ({money(sMonth)}) - Exp ({money(expMonth)})</div>
-        </div>
-
-        {/* PENDING BALANCE */}
-        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #D97706' }}>
-          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Balance</div>
-          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: totalPendingBal > 0 ? '#D97706' : '#059669', marginTop: '4px' }}>
-            {money(totalPendingBal)}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Collection rate: {collectionRate}%</div>
         </div>
 
       </div>
@@ -330,6 +412,75 @@ export default function AdminDashboard({
       {adminTab === 'analytics' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
           
+          {/* MONTHLY FINANCIAL INSPECTOR (SELECT ANY SPECIFIC MONTH) */}
+          <div className="card" style={{ gridColumn: '1 / -1', border: '2px solid var(--accent)' }}>
+            <h2>
+              <span>📅 Specific Month Financial Inspector</span>
+              <span className="badge" style={{ background: '#EFF6FF', color: '#2563EB' }}>Archive &amp; History</span>
+            </h2>
+            <div className="body">
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '20px', padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <div style={{ flex: 1, minWidth: '220px' }}>
+                  <label style={{ fontWeight: 700, fontSize: '13.5px', marginBottom: '6px', display: 'block' }}>
+                    Select Month &amp; Year to Inspect:
+                  </label>
+                  <select
+                    value={selectedMonthKey}
+                    onChange={(e) => setSelectedMonthKey(e.target.value)}
+                    style={{ fontSize: '15px', fontWeight: 800, padding: '10px 14px', borderRadius: '10px', color: 'var(--accent)' }}
+                  >
+                    {availableMonths.map(mKey => (
+                      <option key={mKey} value={mKey}>
+                        {fmtMonthKey(mKey)} {mKey === currentMonthKey ? ' (Current Month)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontWeight: 700, fontSize: '13.5px', marginBottom: '6px', display: 'block' }}>
+                    Or Pick Custom Month:
+                  </label>
+                  <input
+                    type="month"
+                    value={selectedMonthKey}
+                    onChange={(e) => e.target.value && setSelectedMonthKey(e.target.value)}
+                    style={{ fontSize: '15px', fontWeight: 800, padding: '9px 12px', borderRadius: '10px' }}
+                  />
+                </div>
+              </div>
+
+              {/* STATS GRID FOR SELECTED MONTH */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
+                <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Gross Sales ({fmtMonthKey(selectedMonthKey)})</div>
+                  <div className="mono" style={{ fontSize: '22px', fontWeight: 800, color: 'var(--accent)', marginTop: '4px' }}>{money(selGrossSales)}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{selOrderCount} receipt(s)</div>
+                </div>
+
+                <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Expenses ({fmtMonthKey(selectedMonthKey)})</div>
+                  <div className="mono" style={{ fontSize: '22px', fontWeight: 800, color: '#DC2626', marginTop: '4px' }}>- {money(selExpenses)}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{selectedExpenses.length} expense item(s)</div>
+                </div>
+
+                <div style={{ padding: '16px', background: selNetProfit >= 0 ? '#ECFDF5' : '#FEF2F2', borderRadius: '12px', border: `1px solid ${selNetProfit >= 0 ? '#10B981' : '#EF4444'}` }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Net Profit ({fmtMonthKey(selectedMonthKey)})</div>
+                  <div className="mono" style={{ fontSize: '24px', fontWeight: 900, color: selNetProfit >= 0 ? '#059669' : '#DC2626', marginTop: '4px' }}>
+                    {money(selNetProfit)}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>Net Revenue after Expenses</div>
+                </div>
+
+                <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Avg Order Value ({fmtMonthKey(selectedMonthKey)})</div>
+                  <div className="mono" style={{ fontSize: '22px', fontWeight: 800, color: 'var(--ink)', marginTop: '4px' }}>{money(selAvgOrder)}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>Average per order</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* BAR CHART: REVENUE VS EXPENSE TREND (7 DAYS) */}
           <div className="card">
             <h2>
@@ -409,6 +560,52 @@ export default function AdminDashboard({
             </div>
           </div>
 
+          {/* FINANCIAL SUMMARY & HISTORICAL PERIOD COMPARISON */}
+          <div className="card">
+            <h2>
+              <span>💳 Financial Statement &amp; Period Net Income</span>
+              <span className="badge">Comparison</span>
+            </h2>
+            <div className="body stack">
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Today's Net Income:</span>
+                <b className="mono" style={{ color: netToday >= 0 ? '#059669' : '#DC2626', fontSize: '15.5px' }}>{money(netToday)}</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Yesterday's Net Income:</span>
+                <b className="mono" style={{ color: netYesterday >= 0 ? '#059669' : '#DC2626', fontSize: '15.5px' }}>{money(netYesterday)}</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>This Week's Net Income (Past 7 Days):</span>
+                <b className="mono" style={{ color: netWeek >= 0 ? '#059669' : '#DC2626', fontSize: '15.5px' }}>{money(netWeek)}</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Last Week's Net Income (Days 8-14):</span>
+                <b className="mono" style={{ color: netLastWeek >= 0 ? '#2563EB' : '#DC2626', fontSize: '15.5px' }}>{money(netLastWeek)}</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>This Month's Net Income:</span>
+                <b className="mono" style={{ color: netMonth >= 0 ? '#7C3AED' : '#DC2626', fontSize: '15.5px' }}>{money(netMonth)}</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Last Month's Net Income:</span>
+                <b className="mono" style={{ color: netLastMonth >= 0 ? '#7C3AED' : '#DC2626', fontSize: '15.5px' }}>{money(netLastMonth)}</b>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: netTotalAll >= 0 ? '#ECFDF5' : '#FEF2F2', borderRadius: '10px', border: `1px solid ${netTotalAll >= 0 ? '#10B981' : '#EF4444'}` }}>
+                <span style={{ fontWeight: 800, color: 'var(--ink)' }}>All-Time Net Profit:</span>
+                <b className="mono" style={{ color: netTotalAll >= 0 ? '#059669' : '#DC2626', fontSize: '17px', fontWeight: 900 }}>
+                  {money(netTotalAll)}
+                </b>
+              </div>
+            </div>
+          </div>
+
           {/* TEAM LEADERBOARD & PERFORMANCE */}
           <div className="card">
             <h2>
@@ -451,32 +648,6 @@ export default function AdminDashboard({
                     ))}
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* FINANCIAL SUMMARY & NET PROFIT OVERVIEW */}
-          <div className="card">
-            <h2>
-              <span>💳 Net Financial Statement</span>
-              <span className="badge">Overview</span>
-            </h2>
-            <div className="body stack">
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
-                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Total All-Time Sales:</span>
-                <b className="mono" style={{ color: 'var(--accent)', fontSize: '16px' }}>{money(sTotalAll)}</b>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
-                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Total All-Time Expenses:</span>
-                <b className="mono" style={{ color: '#DC2626', fontSize: '16px' }}>- {money(expTotalAll)}</b>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: netTotalAll >= 0 ? '#ECFDF5' : '#FEF2F2', borderRadius: '10px', border: `1px solid ${netTotalAll >= 0 ? '#10B981' : '#EF4444'}` }}>
-                <span style={{ fontWeight: 800, color: 'var(--ink)' }}>All-Time Net Profit:</span>
-                <b className="mono" style={{ color: netTotalAll >= 0 ? '#059669' : '#DC2626', fontSize: '18px', fontWeight: 900 }}>
-                  {money(netTotalAll)}
-                </b>
-              </div>
             </div>
           </div>
 
@@ -550,25 +721,40 @@ export default function AdminDashboard({
           {/* RIGHT COLUMN: DAILY NET INCOME & EXPENSE LOG */}
           <div className="card">
             <h2>
-              <span>📋 Daily Expense Log &amp; Net Income</span>
+              <span>📋 Expense Log &amp; Period Net Income</span>
               <span className="badge">{filteredExpenses.length} expense(s)</span>
             </h2>
             <div className="body">
-              {/* TODAY'S NET SUMMARY BOX */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px', padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)', marginBottom: '20px' }}>
-                <div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Gross Sales</div>
-                  <div className="mono" style={{ fontSize: '16px', fontWeight: 800, color: 'var(--accent)' }}>{money(sToday)}</div>
+              {/* FILTERS */}
+              <div className="filters" style={{ marginBottom: '16px' }}>
+                <div style={{ flex: 1 }}>
+                  <label>Search Expenses</label>
+                  <input
+                    className="search"
+                    placeholder="Search description or category…"
+                    value={searchBox}
+                    onChange={(e) => setSearchBox(e.target.value)}
+                  />
                 </div>
                 <div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Expenses</div>
-                  <div className="mono" style={{ fontSize: '16px', fontWeight: 800, color: '#DC2626' }}>- {money(expToday)}</div>
+                  <label>Staff Filter</label>
+                  <select value={filterStaff} onChange={(e) => setFilterStaff(e.target.value)}>
+                    <option value="">All Team Members</option>
+                    {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Net Income</div>
-                  <div className="mono" style={{ fontSize: '17px', fontWeight: 900, color: netToday >= 0 ? '#059669' : '#DC2626' }}>
-                    {money(netToday)}
-                  </div>
+                  <label>Period Filter</label>
+                  <select value={filterDay} onChange={(e) => setFilterDay(e.target.value)}>
+                    <option value="">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="week">This Week (Past 7 Days)</option>
+                    <option value="last_week">Last Week (Days 8-14)</option>
+                    <option value="month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="selected_month">Inspect Selected Month ({fmtMonthKey(selectedMonthKey)})</option>
+                  </select>
                 </div>
               </div>
 
@@ -638,12 +824,16 @@ export default function AdminDashboard({
                 </select>
               </div>
               <div>
-                <label>Period</label>
+                <label>Period Filter</label>
                 <select value={filterDay} onChange={(e) => setFilterDay(e.target.value)}>
                   <option value="">All Time</option>
                   <option value="today">Today</option>
-                  <option value="week">This Week</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="week">This Week (Past 7 Days)</option>
+                  <option value="last_week">Last Week (Days 8-14)</option>
                   <option value="month">This Month</option>
+                  <option value="last_month">Last Month</option>
+                  <option value="selected_month">Inspect Selected Month ({fmtMonthKey(selectedMonthKey)})</option>
                 </select>
               </div>
               <div>
