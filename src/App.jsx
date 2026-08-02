@@ -157,18 +157,39 @@ export default function App() {
           setState(prev => {
             const updated = { ...prev };
             if (salesRes.data && salesRes.data.length > 0) {
-              updated.sales = salesRes.data.map(s => ({
-                id: s.id,
-                ts: Number(s.ts),
-                staff: s.staff || '',
-                customer: s.customer || '',
-                phone: s.phone || '',
-                items: s.items || [],
-                total: Number(s.total || 0),
-                paid: Number(s.paid != null ? s.paid : s.total),
-                balance: Number(s.balance || 0)
-              }));
+              const normalSales = [];
+              const expList = [];
+
+              salesRes.data.forEach(s => {
+                const isExp = s.customer === '__EXPENSE__' || (s.id && String(s.id).startsWith('EXP-'));
+                if (isExp) {
+                  expList.push({
+                    id: s.id,
+                    ts: Number(s.ts),
+                    title: (s.items && s.items[0] && s.items[0].title) || 'Expense',
+                    amount: Number(s.total || 0),
+                    category: s.phone || (s.items && s.items[0] && s.items[0].category) || 'Supplies',
+                    staff: s.staff || 'Umar'
+                  });
+                } else {
+                  normalSales.push({
+                    id: s.id,
+                    ts: Number(s.ts),
+                    staff: s.staff || '',
+                    customer: s.customer || '',
+                    phone: s.phone || '',
+                    items: s.items || [],
+                    total: Number(s.total || 0),
+                    paid: Number(s.paid != null ? s.paid : s.total),
+                    balance: Number(s.balance || 0)
+                  });
+                }
+              });
+
+              updated.sales = normalSales;
+              if (expList.length > 0) updated.expenses = expList;
             }
+
             if (settingsRes.data) {
               const st = settingsRes.data;
               if (st.studio_name) updated.studio = st.studio_name;
@@ -183,7 +204,7 @@ export default function App() {
               if (st.one_by_one_ro) updated.oneByOneRo = st.one_by_one_ro;
               if (st.sets) updated.sets = st.sets;
               if (st.misc) updated.misc = st.misc;
-              if (st.expenses) updated.expenses = st.expenses;
+              if (st.expenses && Array.isArray(st.expenses) && st.expenses.length > 0) updated.expenses = st.expenses;
             }
             return updated;
           });
@@ -201,26 +222,22 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const row = payload.new;
-          const formatted = {
-            id: row.id,
-            ts: Number(row.ts),
-            staff: row.staff || '',
-            customer: row.customer || '',
-            phone: row.phone || '',
-            items: row.items || [],
-            total: Number(row.total || 0),
-            paid: Number(row.paid != null ? row.paid : row.total),
-            balance: Number(row.balance || 0)
-          };
-          setState(prev => {
-            if (prev.sales.some(s => s.id === formatted.id)) return prev;
-            return { ...prev, sales: [formatted, ...prev.sales] };
-          });
-        } else if (payload.eventType === 'UPDATE') {
-          const row = payload.new;
-          setState(prev => ({
-            ...prev,
-            sales: prev.sales.map(s => s.id === row.id ? {
+          const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
+          if (isExp) {
+            const formattedExp = {
+              id: row.id,
+              ts: Number(row.ts),
+              title: (row.items && row.items[0] && row.items[0].title) || 'Expense',
+              amount: Number(row.total || 0),
+              category: row.phone || (row.items && row.items[0] && row.items[0].category) || 'Supplies',
+              staff: row.staff || 'Umar'
+            };
+            setState(prev => {
+              if (prev.expenses && prev.expenses.some(e => e.id === formattedExp.id)) return prev;
+              return { ...prev, expenses: [formattedExp, ...(prev.expenses || [])] };
+            });
+          } else {
+            const formatted = {
               id: row.id,
               ts: Number(row.ts),
               staff: row.staff || '',
@@ -230,11 +247,52 @@ export default function App() {
               total: Number(row.total || 0),
               paid: Number(row.paid != null ? row.paid : row.total),
               balance: Number(row.balance || 0)
-            } : s)
-          }));
+            };
+            setState(prev => {
+              if (prev.sales.some(s => s.id === formatted.id)) return prev;
+              return { ...prev, sales: [formatted, ...prev.sales] };
+            });
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          const row = payload.new;
+          const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
+          if (isExp) {
+            const formattedExp = {
+              id: row.id,
+              ts: Number(row.ts),
+              title: (row.items && row.items[0] && row.items[0].title) || 'Expense',
+              amount: Number(row.total || 0),
+              category: row.phone || (row.items && row.items[0] && row.items[0].category) || 'Supplies',
+              staff: row.staff || 'Umar'
+            };
+            setState(prev => ({
+              ...prev,
+              expenses: (prev.expenses || []).map(e => e.id === row.id ? formattedExp : e)
+            }));
+          } else {
+            setState(prev => ({
+              ...prev,
+              sales: prev.sales.map(s => s.id === row.id ? {
+                id: row.id,
+                ts: Number(row.ts),
+                staff: row.staff || '',
+                customer: row.customer || '',
+                phone: row.phone || '',
+                items: row.items || [],
+                total: Number(row.total || 0),
+                paid: Number(row.paid != null ? row.paid : row.total),
+                balance: Number(row.balance || 0)
+              } : s)
+            }));
+          }
         } else if (payload.eventType === 'DELETE') {
           const oldId = payload.old.id;
-          setState(prev => ({ ...prev, sales: prev.sales.filter(s => s.id !== oldId) }));
+          const isExp = String(oldId).startsWith('EXP-');
+          if (isExp) {
+            setState(prev => ({ ...prev, expenses: (prev.expenses || []).filter(e => e.id !== oldId) }));
+          } else {
+            setState(prev => ({ ...prev, sales: prev.sales.filter(s => s.id !== oldId) }));
+          }
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_settings' }, (payload) => {
@@ -253,8 +311,7 @@ export default function App() {
             oneByOneExp: st.one_by_one_exp || prev.oneByOneExp,
             oneByOneRo: st.one_by_one_ro || prev.oneByOneRo,
             sets: st.sets || prev.sets,
-            misc: st.misc || prev.misc,
-            expenses: st.expenses || prev.expenses
+            misc: st.misc || prev.misc
           }));
         }
       })
@@ -398,7 +455,7 @@ export default function App() {
   };
 
   // Expense Handlers
-  const handleAddExpense = ({ title, amount, category, staff }) => {
+  const handleAddExpense = async ({ title, amount, category, staff }) => {
     const newExp = {
       id: "EXP-" + Date.now(),
       ts: Date.now(),
@@ -413,17 +470,41 @@ export default function App() {
       expenses: [newExp, ...(state.expenses || [])]
     };
     setState(nextState);
-    syncSettingsToCloud(nextState);
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').insert([{
+          id: newExp.id,
+          ts: newExp.ts,
+          staff: newExp.staff,
+          customer: '__EXPENSE__',
+          phone: newExp.category,
+          items: [{ title: newExp.title, category: newExp.category, amount: newExp.amount }],
+          total: newExp.amount,
+          paid: newExp.amount,
+          balance: 0
+        }]);
+      } catch (err) {
+        console.error('Error syncing expense to Supabase:', err);
+      }
+    }
   };
 
-  const handleDeleteExpense = (expId) => {
+  const handleDeleteExpense = async (expId) => {
     if (!window.confirm("Delete this expense record?")) return;
     const nextState = {
       ...state,
       expenses: (state.expenses || []).filter(e => e.id !== expId)
     };
     setState(nextState);
-    syncSettingsToCloud(nextState);
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').delete().eq('id', expId);
+      } catch (err) {
+        console.error('Error deleting expense from Supabase:', err);
+      }
+    }
   };
 
   // Export & Backup handlers
