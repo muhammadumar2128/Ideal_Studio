@@ -32,6 +32,8 @@ export default function AdminDashboard({
   onLogout,
   onMarkPaid,
   onDeleteSale,
+  onAddExpense,
+  onDeleteExpense,
   onSyncSettings,
   onWipeAll,
   onExportJson,
@@ -41,7 +43,7 @@ export default function AdminDashboard({
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
-  // Form states for new items, sets, and staff
+  // Form states for new items, sets, staff, and expenses
   const [newSetName, setNewSetName] = useState('');
   const [newSetPrice, setNewSetPrice] = useState('');
   const [newMiscName, setNewMiscName] = useState('');
@@ -49,7 +51,13 @@ export default function AdminDashboard({
   const [newPrintSize, setNewPrintSize] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
 
-  // Search & Filter state for Sales Audit
+  // Expense form state
+  const [expTitle, setExpTitle] = useState('');
+  const [expAmount, setExpAmount] = useState('');
+  const [expCategory, setExpCategory] = useState('Supplies');
+  const [expStaff, setExpStaff] = useState(state.lastStaff || (state.staff[0] || 'Umar'));
+
+  // Search & Filter state for Sales Audit & Expenses
   const [searchBox, setSearchBox] = useState('');
   const [filterStaff, setFilterStaff] = useState('');
   const [filterDay, setFilterDay] = useState('');
@@ -58,11 +66,15 @@ export default function AdminDashboard({
   // Calculated Metrics
   const now = new Date();
   const salesList = state.sales || [];
+  const expensesList = state.expenses || [];
+
   let sToday = 0, sWeek = 0, sMonth = 0, sTotalAll = 0, totalPendingBal = 0, paidCount = 0;
+  let expToday = 0, expWeek = 0, expMonth = 0, expTotalAll = 0;
 
   const categoryTotals = { Print: 0, Frame: 0, Pictures: 0, '1x1': 0, Set: 0, Item: 0, Custom: 0 };
   const staffPerformance = {};
 
+  // Sales aggregation
   salesList.forEach(s => {
     const d = new Date(s.ts);
     const total = Number(s.total || 0);
@@ -99,6 +111,22 @@ export default function AdminDashboard({
     }
   });
 
+  // Expenses aggregation
+  expensesList.forEach(e => {
+    const d = new Date(e.ts);
+    const amt = Number(e.amount || 0);
+    expTotalAll += amt;
+    if (isSameDay(d, now)) expToday += amt;
+    if (isThisWeek(d)) expWeek += amt;
+    if (isThisMonth(d)) expMonth += amt;
+  });
+
+  // Net Income calculations (Sales Revenue - Daily Expenses)
+  const netToday = sToday - expToday;
+  const netWeek = sWeek - expWeek;
+  const netMonth = sMonth - expMonth;
+  const netTotalAll = sTotalAll - expTotalAll;
+
   const totalSalesCount = salesList.length;
   const avgOrderValue = totalSalesCount > 0 ? Math.round(sTotalAll / totalSalesCount) : 0;
   const collectionRate = sTotalAll > 0 ? Math.round(((sTotalAll - totalPendingBal) / sTotalAll) * 100) : 100;
@@ -111,7 +139,10 @@ export default function AdminDashboard({
     const dayRevenue = salesList
       .filter(s => isSameDay(new Date(s.ts), date))
       .reduce((sum, s) => sum + Number(s.total || 0), 0);
-    return { day: dayName, revenue: dayRevenue };
+    const dayExpense = expensesList
+      .filter(e => isSameDay(new Date(e.ts), date))
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    return { day: dayName, revenue: dayRevenue, expense: dayExpense, net: dayRevenue - dayExpense };
   });
 
   const maxDayRevenue = Math.max(...last7Days.map(d => d.revenue), 1000);
@@ -142,6 +173,18 @@ export default function AdminDashboard({
     if (filterStatus === "paid" && bal > 0) return false;
     const q = searchBox.toLowerCase().trim();
     if (q && s.id.toLowerCase().indexOf(q) < 0 && (s.customer || "").toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+
+  // Filtered Expenses
+  const filteredExpenses = expensesList.filter(e => {
+    const d = new Date(e.ts);
+    if (filterStaff && e.staff !== filterStaff) return false;
+    if (filterDay === "today" && !isSameDay(d, now)) return false;
+    if (filterDay === "week" && !isThisWeek(d)) return false;
+    if (filterDay === "month" && !isThisMonth(d)) return false;
+    const q = searchBox.toLowerCase().trim();
+    if (q && e.title.toLowerCase().indexOf(q) < 0 && (e.category || "").toLowerCase().indexOf(q) < 0) return false;
     return true;
   });
 
@@ -194,6 +237,19 @@ export default function AdminDashboard({
     setNewPrintSize('');
   };
 
+  const submitExpense = (e) => {
+    e.preventDefault();
+    if (!expTitle.trim() || !expAmount) return;
+    onAddExpense({
+      title: expTitle,
+      amount: expAmount,
+      category: expCategory,
+      staff: expStaff
+    });
+    setExpTitle('');
+    setExpAmount('');
+  };
+
   return (
     <div className="admin-dashboard">
       {/* ADMIN HEADER BANNER */}
@@ -207,7 +263,7 @@ export default function AdminDashboard({
               <span className="badge" style={{ background: '#2563EB', color: '#FFFFFF', fontWeight: 700 }}>PRO</span>
             </div>
             <div style={{ color: '#94A3B8', fontSize: '13.5px', marginTop: '4px' }}>
-              Real-time financial analytics, team leaderboard, and system control center.
+              Real-time sales revenue, expense tracking, net profit, and control center.
             </div>
           </div>
           <button className="btn danger sm" onClick={onLogout} style={{ borderRadius: '8px' }}>
@@ -216,44 +272,54 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* TOP KPI CARDS */}
+      {/* TOP FINANCIAL KPI CARDS */}
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        
+        {/* TODAY GROSS SALES */}
         <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #2563EB' }}>
-          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Revenue</div>
+          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Gross Sales</div>
           <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#2563EB', marginTop: '4px' }}>{money(sToday)}</div>
-          <div style={{ fontSize: '12px', color: '#059669', marginTop: '6px', fontWeight: 600 }}>Live Today</div>
+          <div style={{ fontSize: '12px', color: '#059669', marginTop: '6px', fontWeight: 600 }}>Live Receipts Today</div>
         </div>
 
-        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #059669' }}>
-          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>This Week</div>
-          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#059669', marginTop: '4px' }}>{money(sWeek)}</div>
-          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Past 7 days</div>
-        </div>
-
-        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #7C3AED' }}>
-          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>This Month</div>
-          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#7C3AED', marginTop: '4px' }}>{money(sMonth)}</div>
-          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Current month</div>
-        </div>
-
-        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #D97706' }}>
-          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>All Time Sales</div>
-          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#D97706', marginTop: '4px' }}>{money(sTotalAll)}</div>
-          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>{totalSalesCount} total order(s)</div>
-        </div>
-
+        {/* TODAY EXPENSES */}
         <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #DC2626' }}>
+          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Expenses</div>
+          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#DC2626', marginTop: '4px' }}>{money(expToday)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>{expensesList.filter(e => isSameDay(new Date(e.ts), now)).length} expense(s) logged</div>
+        </div>
+
+        {/* TODAY NET INCOME / PROFIT */}
+        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: `4px solid ${netToday >= 0 ? '#10B981' : '#DC2626'}` }}>
+          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Net Profit</div>
+          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: netToday >= 0 ? '#10B981' : '#DC2626', marginTop: '4px' }}>
+            {money(netToday)}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Sales minus Expenses</div>
+        </div>
+
+        {/* THIS MONTH NET INCOME */}
+        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #7C3AED' }}>
+          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Month Net Income</div>
+          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#7C3AED', marginTop: '4px' }}>{money(netMonth)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Sales ({money(sMonth)}) - Exp ({money(expMonth)})</div>
+        </div>
+
+        {/* PENDING BALANCE */}
+        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #D97706' }}>
           <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Balance</div>
-          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: totalPendingBal > 0 ? '#DC2626' : '#059669', marginTop: '4px' }}>
+          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: totalPendingBal > 0 ? '#D97706' : '#059669', marginTop: '4px' }}>
             {money(totalPendingBal)}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Collection rate: {collectionRate}%</div>
         </div>
+
       </div>
 
       {/* ADMIN INNER TABS NAVIGATION */}
       <nav className="tabs" style={{ marginBottom: '24px' }}>
         <button className={adminTab === 'analytics' ? 'active' : ''} onClick={() => setAdminTab('analytics')}>📈 Analytics &amp; Graphs</button>
+        <button className={adminTab === 'expenses' ? 'active' : ''} onClick={() => setAdminTab('expenses')}>💸 Daily Expenses &amp; Net Profit</button>
         <button className={adminTab === 'audit' ? 'active' : ''} onClick={() => setAdminTab('audit')}>📋 Sales Audit ({totalSalesCount})</button>
         <button className={adminTab === 'prices' ? 'active' : ''} onClick={() => setAdminTab('prices')}>🏷️ Rate List &amp; Custom Services</button>
         <button className={adminTab === 'team' ? 'active' : ''} onClick={() => setAdminTab('team')}>👥 Team &amp; Staff</button>
@@ -264,11 +330,11 @@ export default function AdminDashboard({
       {adminTab === 'analytics' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px' }}>
           
-          {/* BAR CHART: REVENUE TREND (7 DAYS) */}
+          {/* BAR CHART: REVENUE VS EXPENSE TREND (7 DAYS) */}
           <div className="card">
             <h2>
-              <span>📈 7-Day Revenue Trend</span>
-              <span className="badge">Daily Total</span>
+              <span>📈 7-Day Revenue &amp; Net Income Trend</span>
+              <span className="badge">Daily Sales</span>
             </h2>
             <div className="body">
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '180px', paddingTop: '20px', paddingBottom: '10px', gap: '12px', borderBottom: '1px solid var(--line)' }}>
@@ -288,7 +354,7 @@ export default function AdminDashboard({
                           borderRadius: '6px 6px 0 0',
                           transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
                         }}
-                        title={`${item.day}: ${money(item.revenue)}`}
+                        title={`${item.day} - Sales: ${money(item.revenue)} | Exp: ${money(item.expense)} | Net: ${money(item.net)}`}
                       />
                       <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginTop: '8px' }}>
                         {item.day}
@@ -388,27 +454,27 @@ export default function AdminDashboard({
             </div>
           </div>
 
-          {/* KEY PERFORMANCE METRICS */}
+          {/* FINANCIAL SUMMARY & NET PROFIT OVERVIEW */}
           <div className="card">
             <h2>
-              <span>💳 Financial Summary &amp; Collection</span>
+              <span>💳 Net Financial Statement</span>
               <span className="badge">Overview</span>
             </h2>
             <div className="body stack">
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
-                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Average Order Value (AOV):</span>
-                <b className="mono" style={{ color: 'var(--accent)', fontSize: '16px' }}>{money(avgOrderValue)}</b>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Total All-Time Sales:</span>
+                <b className="mono" style={{ color: 'var(--accent)', fontSize: '16px' }}>{money(sTotalAll)}</b>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
-                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Fully Paid Receipts:</span>
-                <b className="mono" style={{ color: '#059669', fontSize: '16px' }}>{paidCount} / {totalSalesCount}</b>
+                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Total All-Time Expenses:</span>
+                <b className="mono" style={{ color: '#DC2626', fontSize: '16px' }}>- {money(expTotalAll)}</b>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--paper)', borderRadius: '10px' }}>
-                <span style={{ color: 'var(--muted)', fontWeight: 600 }}>Pending Balance Collection:</span>
-                <b className="mono" style={{ color: totalPendingBal > 0 ? '#DC2626' : '#059669', fontSize: '16px' }}>
-                  {money(totalPendingBal)}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 14px', background: netTotalAll >= 0 ? '#ECFDF5' : '#FEF2F2', borderRadius: '10px', border: `1px solid ${netTotalAll >= 0 ? '#10B981' : '#EF4444'}` }}>
+                <span style={{ fontWeight: 800, color: 'var(--ink)' }}>All-Time Net Profit:</span>
+                <b className="mono" style={{ color: netTotalAll >= 0 ? '#059669' : '#DC2626', fontSize: '18px', fontWeight: 900 }}>
+                  {money(netTotalAll)}
                 </b>
               </div>
             </div>
@@ -417,7 +483,139 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 2: SALES AUDIT & RECORDS */}
+      {/* TAB 2: DAILY EXPENSES & NET INCOME */}
+      {adminTab === 'expenses' && (
+        <div className="grid">
+          {/* LEFT COLUMN: LOG NEW EXPENSE */}
+          <div className="card">
+            <h2>
+              <span>💸 Log New Expense</span>
+              <span className="badge" style={{ background: '#FEF2F2', color: '#DC2626' }}>Daily Outflow</span>
+            </h2>
+            <div className="body">
+              <form onSubmit={submitExpense}>
+                <div className="field">
+                  <label>Expense Purpose / Description</label>
+                  <input
+                    placeholder="e.g. Printing Paper Roll, Electricity, Tea / Refreshments"
+                    value={expTitle}
+                    onChange={(e) => setExpTitle(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="row r2">
+                  <div className="field">
+                    <label>Amount ({CUR})</label>
+                    <input
+                      className="mono"
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="0"
+                      value={expAmount}
+                      onChange={(e) => setExpAmount(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Category</label>
+                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}>
+                      <option value="Supplies">📦 Paper / Printing Supplies</option>
+                      <option value="Utilities">⚡ Electricity / Utilities</option>
+                      <option value="Food/Tea">☕ Tea / Refreshments</option>
+                      <option value="Transport">🚚 Transport / Delivery</option>
+                      <option value="Maintenance">🛠️ Equipment Maintenance</option>
+                      <option value="Rent">🏢 Rent / Shop Expense</option>
+                      <option value="Salary">💰 Staff Advance / Salary</option>
+                      <option value="Other">🌀 Other Miscellaneous</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label>Logged By Staff Member</label>
+                  <select value={expStaff} onChange={(e) => setExpStaff(e.target.value)}>
+                    {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </div>
+
+                <button className="btn primary block" type="submit" style={{ marginTop: '10px', background: '#DC2626', borderColor: '#DC2626' }}>
+                  ➖ Record Expense &amp; Update Net Profit
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: DAILY NET INCOME & EXPENSE LOG */}
+          <div className="card">
+            <h2>
+              <span>📋 Daily Expense Log &amp; Net Income</span>
+              <span className="badge">{filteredExpenses.length} expense(s)</span>
+            </h2>
+            <div className="body">
+              {/* TODAY'S NET SUMMARY BOX */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px', padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)', marginBottom: '20px' }}>
+                <div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Gross Sales</div>
+                  <div className="mono" style={{ fontSize: '16px', fontWeight: 800, color: 'var(--accent)' }}>{money(sToday)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Expenses</div>
+                  <div className="mono" style={{ fontSize: '16px', fontWeight: 800, color: '#DC2626' }}>- {money(expToday)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Net Income</div>
+                  <div className="mono" style={{ fontSize: '17px', fontWeight: 900, color: netToday >= 0 ? '#059669' : '#DC2626' }}>
+                    {money(netToday)}
+                  </div>
+                </div>
+              </div>
+
+              {!filteredExpenses.length ? (
+                <div className="empty-state">No expense records logged for this period.</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date &amp; Time</th>
+                        <th>Staff</th>
+                        <th>Category</th>
+                        <th>Description</th>
+                        <th className="num">Amount</th>
+                        <th style={{ textAlign: 'center' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredExpenses.map(e => (
+                        <tr key={e.id}>
+                          <td style={{ fontSize: '12.5px' }}>{fmtDate(e.ts)}</td>
+                          <td>{e.staff || '—'}</td>
+                          <td><span className="badge" style={{ margin: 0, fontSize: '10.5px' }}>{e.category}</span></td>
+                          <td style={{ fontWeight: 700 }}>{e.title}</td>
+                          <td className="num mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(e.amount)}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              className="x"
+                              title="Delete expense"
+                              onClick={() => onDeleteExpense && onDeleteExpense(e.id)}
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: SALES AUDIT & RECORDS */}
       {adminTab === 'audit' && (
         <div className="card">
           <h2>Sales Audit &amp; Transaction Journal</h2>
@@ -538,7 +736,7 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 3: RATE LIST & CUSTOM SERVICES EDITOR */}
+      {/* TAB 4: RATE LIST & CUSTOM SERVICES EDITOR */}
       {adminTab === 'prices' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* PRINTS & FRAMES RATE EDITOR */}
@@ -878,7 +1076,7 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 4: TEAM & STAFF */}
+      {/* TAB 5: TEAM & STAFF */}
       {adminTab === 'team' && (
         <div className="grid">
           <div className="card">
@@ -946,7 +1144,7 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 5: SYSTEM & BACKUP */}
+      {/* TAB 6: SYSTEM & BACKUP */}
       {adminTab === 'system' && (
         <div className="grid">
           <div className="card">

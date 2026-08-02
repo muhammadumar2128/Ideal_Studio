@@ -52,7 +52,8 @@ function getDefaults() {
     oneByOneExp: JSON.parse(JSON.stringify(exp)),
     oneByOneRo: JSON.parse(JSON.stringify(ro)),
     sets,
-    misc
+    misc,
+    expenses: []
   };
 }
 
@@ -182,6 +183,7 @@ export default function App() {
               if (st.one_by_one_ro) updated.oneByOneRo = st.one_by_one_ro;
               if (st.sets) updated.sets = st.sets;
               if (st.misc) updated.misc = st.misc;
+              if (st.expenses) updated.expenses = st.expenses;
             }
             return updated;
           });
@@ -251,7 +253,8 @@ export default function App() {
             oneByOneExp: st.one_by_one_exp || prev.oneByOneExp,
             oneByOneRo: st.one_by_one_ro || prev.oneByOneRo,
             sets: st.sets || prev.sets,
-            misc: st.misc || prev.misc
+            misc: st.misc || prev.misc,
+            expenses: st.expenses || prev.expenses
           }));
         }
       })
@@ -281,6 +284,7 @@ export default function App() {
         one_by_one_ro: newState.oneByOneRo,
         sets: newState.sets,
         misc: newState.misc,
+        expenses: newState.expenses,
         updated_at: new Date().toISOString()
       });
     } catch (e) {
@@ -391,6 +395,35 @@ export default function App() {
         console.error('Error deleting sale in Supabase:', err);
       }
     }
+  };
+
+  // Expense Handlers
+  const handleAddExpense = ({ title, amount, category, staff }) => {
+    const newExp = {
+      id: "EXP-" + Date.now(),
+      ts: Date.now(),
+      title: title.trim(),
+      amount: Number(amount) || 0,
+      category: category || "General",
+      staff: staff || state.lastStaff || "Umar"
+    };
+
+    const nextState = {
+      ...state,
+      expenses: [newExp, ...(state.expenses || [])]
+    };
+    setState(nextState);
+    syncSettingsToCloud(nextState);
+  };
+
+  const handleDeleteExpense = (expId) => {
+    if (!window.confirm("Delete this expense record?")) return;
+    const nextState = {
+      ...state,
+      expenses: (state.expenses || []).filter(e => e.id !== expId)
+    };
+    setState(nextState);
+    syncSettingsToCloud(nextState);
   };
 
   // Export & Backup handlers
@@ -521,7 +554,7 @@ export default function App() {
               </span>
             </h1>
             <div className="sub">
-              Ph: 0304-5225523 · WhatsApp: 0327-5005990
+              Ph: 0304-5225523 · WhatsApp: 0327-5006990
               {cloudSynced ? (
                 <span style={{ marginLeft: '8px', color: 'var(--emerald)', fontWeight: 700 }}>
                   ⚡ Supabase Live
@@ -585,6 +618,8 @@ export default function App() {
           state={state}
           onSaveSale={handleSaveSaleFromTeam}
           onMarkPaid={handleMarkPaid}
+          onAddExpense={handleAddExpense}
+          onDeleteExpense={handleDeleteExpense}
           setActiveModalSale={setActiveModalSale}
           onOpenAdminLogin={() => setShowLoginModal(true)}
           isAdminLoggedIn={!!adminUser}
@@ -596,6 +631,8 @@ export default function App() {
           onLogout={handleLogoutAdmin}
           onMarkPaid={handleMarkPaid}
           onDeleteSale={handleDeleteSale}
+          onAddExpense={handleAddExpense}
+          onDeleteExpense={handleDeleteExpense}
           onSyncSettings={syncSettingsToCloud}
           onWipeAll={handleWipeAll}
           onExportJson={handleExportJson}
@@ -633,7 +670,7 @@ export default function App() {
             <div className="rc-in">
               <div className="rc-c rc-name">{state.studio}</div>
               <div className="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
-              <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5005990</div>
+              <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5006990</div>
               <div className="rc-c rc-small">Sales Receipt</div>
               <div className="rc-sep"></div>
 

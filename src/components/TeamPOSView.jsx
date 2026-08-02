@@ -22,14 +22,16 @@ export default function TeamPOSView({
   state,
   onSaveSale,
   onMarkPaid,
+  onAddExpense,
+  onDeleteExpense,
   setActiveModalSale,
   onOpenAdminLogin,
   isAdminLoggedIn
 }) {
-  const [teamTab, setTeamTab] = useState('new'); // 'new' or 'records'
+  const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses'
   const [cart, setCart] = useState([]);
 
-  // Form states
+  // Form states for sales
   const [selCat, setSelCat] = useState('print');
   const [selSize, setSelSize] = useState(SIZES[0]);
   const [selType, setSelType] = useState('normal');
@@ -43,6 +45,11 @@ export default function TeamPOSView({
   const [fCust, setFCust] = useState('');
   const [fPhone, setFPhone] = useState('');
   const [fPaid, setFPaid] = useState('');
+
+  // Expense form state for team
+  const [expTitle, setExpTitle] = useState('');
+  const [expAmount, setExpAmount] = useState('');
+  const [expCategory, setExpCategory] = useState('Supplies');
 
   // Records Filter states
   const [searchBox, setSearchBox] = useState('');
@@ -167,9 +174,26 @@ export default function TeamPOSView({
     setFPaid('');
   };
 
+  // Submit expense from team
+  const submitTeamExpense = (e) => {
+    e.preventDefault();
+    if (!expTitle.trim() || !expAmount) return;
+    onAddExpense({
+      title: expTitle,
+      amount: expAmount,
+      category: expCategory,
+      staff: selStaff
+    });
+    setExpTitle('');
+    setExpAmount('');
+    alert("Expense logged successfully!");
+  };
+
   // Records filtering
   const now = new Date();
   const salesList = state.sales || [];
+  const expensesList = state.expenses || [];
+
   const filteredSales = salesList.filter(s => {
     const d = new Date(s.ts);
     if (filterStaff && s.staff !== filterStaff) return false;
@@ -183,6 +207,17 @@ export default function TeamPOSView({
 
   const pendingSalesCount = salesList.filter(s => (s.balance != null ? s.balance : 0) > 0).length;
 
+  // Today totals
+  const todaySalesTotal = salesList
+    .filter(s => isSameDay(new Date(s.ts), now))
+    .reduce((sum, s) => sum + Number(s.total || 0), 0);
+
+  const todayExpensesTotal = expensesList
+    .filter(e => isSameDay(new Date(e.ts), now))
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const todayNetProfit = todaySalesTotal - todayExpensesTotal;
+
   return (
     <div className="team-pos-view">
       {/* TEAM TABS */}
@@ -191,7 +226,10 @@ export default function TeamPOSView({
           🛒 New Sale Order
         </button>
         <button className={teamTab === 'records' ? 'active' : ''} onClick={() => setTeamTab('records')}>
-          📋 Sales Records &amp; Pending Balances {pendingSalesCount > 0 && <span className="badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', fontWeight: 800 }}>{pendingSalesCount} Pending</span>}
+          📋 Sales Records {pendingSalesCount > 0 && <span className="badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', fontWeight: 800 }}>{pendingSalesCount} Pending</span>}
+        </button>
+        <button className={teamTab === 'expenses' ? 'active' : ''} onClick={() => setTeamTab('expenses')}>
+          💸 Log Daily Expense
         </button>
       </nav>
 
@@ -512,6 +550,105 @@ export default function TeamPOSView({
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: LOG COUNTER EXPENSE */}
+      {teamTab === 'expenses' && (
+        <div className="grid">
+          <div className="card">
+            <h2>
+              <span>💸 Log Daily Counter Expense</span>
+              <span className="badge" style={{ background: '#FEF2F2', color: '#DC2626' }}>Outflow</span>
+            </h2>
+            <div className="body">
+              <form onSubmit={submitTeamExpense}>
+                <div className="field">
+                  <label>Expense Description / Purpose</label>
+                  <input
+                    placeholder="e.g. Printing Paper Roll, Tea / Refreshments, Transport"
+                    value={expTitle}
+                    onChange={(e) => setExpTitle(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="row r2">
+                  <div className="field">
+                    <label>Expense Amount ({CUR})</label>
+                    <input
+                      className="mono"
+                      type="number"
+                      min="1"
+                      placeholder="0"
+                      value={expAmount}
+                      onChange={(e) => setExpAmount(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Category</label>
+                    <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}>
+                      <option value="Supplies">📦 Paper / Printing Supplies</option>
+                      <option value="Utilities">⚡ Electricity / Utilities</option>
+                      <option value="Food/Tea">☕ Tea / Refreshments</option>
+                      <option value="Transport">🚚 Transport / Delivery</option>
+                      <option value="Maintenance">🛠️ Equipment Maintenance</option>
+                      <option value="Other">🌀 Other Miscellaneous</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label>Staff Member</label>
+                  <select value={selStaff} onChange={(e) => setSelStaff(e.target.value)}>
+                    {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </div>
+
+                <button className="btn primary block" type="submit" style={{ marginTop: '10px', background: '#DC2626', borderColor: '#DC2626' }}>
+                  ➖ Record Counter Expense
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div className="card">
+            <h2>
+              <span>📋 Today's Expenses Log</span>
+              <span className="badge">{expensesList.filter(e => isSameDay(new Date(e.ts), now)).length} item(s)</span>
+            </h2>
+            <div className="body">
+              {!expensesList.filter(e => isSameDay(new Date(e.ts), now)).length ? (
+                <div className="empty-state">No expenses recorded today.</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Staff</th>
+                        <th>Description</th>
+                        <th className="num">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expensesList
+                        .filter(e => isSameDay(new Date(e.ts), now))
+                        .map(e => (
+                          <tr key={e.id}>
+                            <td style={{ fontSize: '12.5px' }}>{new Date(e.ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}</td>
+                            <td>{e.staff || '—'}</td>
+                            <td style={{ fontWeight: 700 }}>{e.title}</td>
+                            <td className="num mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(e.amount)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
