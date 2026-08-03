@@ -36,6 +36,7 @@ export default function TeamPOSView({
   const [selSize, setSelSize] = useState(SIZES[0]);
   const [selType, setSelType] = useState('normal');
   const [selPages, setSelPages] = useState(PP[0]);
+  const [selBgColor, setSelBgColor] = useState('white'); // 'white' or 'blue'
   const [selSetIndex, setSelSetIndex] = useState(0);
   const [selMiscIndex, setSelMiscIndex] = useState(0);
   const [customDesc, setCustomDesc] = useState('');
@@ -65,6 +66,7 @@ export default function TeamPOSView({
   // Calculate current label, price, and category metadata
   const getItemDetails = () => {
     let label = "", price = 0, meta = "";
+    const bgSuffix = selBgColor === 'blue' ? ' (Blue BG)' : ' (White BG)';
     if (selCat === "print") {
       const typeLabel = (TYPES.find(([k]) => k === selType) || ["", ""])[1];
       label = `${selSize} — ${typeLabel}`;
@@ -75,19 +77,19 @@ export default function TeamPOSView({
       meta = "Frame";
       price = Number(state.frames[selSize]) || 0;
     } else if (selCat === "albexp") {
-      label = `Pictures ${selPages}PP (New)`;
+      label = `Pictures ${selPages}PP (New)${bgSuffix}`;
       meta = "Pictures";
       price = Number(state.albumExp[selPages]) || 0;
     } else if (selCat === "albro") {
-      label = `Pictures ${selPages}PP (Re-order)`;
+      label = `Pictures ${selPages}PP (Re-order)${bgSuffix}`;
       meta = "Pictures";
       price = Number(state.albumRo[selPages]) || 0;
     } else if (selCat === "1x1exp") {
-      label = `${selPages} 1x1 (New)`;
+      label = `${selPages} 1x1 (New)${bgSuffix}`;
       meta = "1x1";
       price = Number(state.oneByOneExp[selPages]) || 0;
     } else if (selCat === "1x1ro") {
-      label = `${selPages} 1x1 (Re-order)`;
+      label = `${selPages} 1x1 (Re-order)${bgSuffix}`;
       meta = "1x1";
       price = Number(state.oneByOneRo[selPages]) || 0;
     } else if (selCat === "set") {
@@ -278,11 +280,20 @@ export default function TeamPOSView({
               )}
 
               {(selCat === 'albexp' || selCat === 'albro' || selCat === '1x1exp' || selCat === '1x1ro') && (
-                <div className="field">
-                  <label>Count / Pages</label>
-                  <select value={selPages} onChange={(e) => setSelPages(Number(e.target.value))}>
-                    {PP.map(p => <option key={p} value={p}>{p}{selCat.startsWith('1x1') ? ' 1x1' : ' PP'}</option>)}
-                  </select>
+                <div className="row r2">
+                  <div className="field">
+                    <label>Count / Pages</label>
+                    <select value={selPages} onChange={(e) => setSelPages(Number(e.target.value))}>
+                      {PP.map(p => <option key={p} value={p}>{p}{selCat.startsWith('1x1') ? ' 1x1' : ' PP'}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Background Color</label>
+                    <select value={selBgColor} onChange={(e) => setSelBgColor(e.target.value)}>
+                      <option value="white">⚪ White Background</option>
+                      <option value="blue">🔵 Blue Background</option>
+                    </select>
+                  </div>
                 </div>
               )}
 
