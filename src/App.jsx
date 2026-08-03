@@ -172,6 +172,7 @@ export default function App() {
                     staff: s.staff || 'Umar'
                   });
                 } else {
+                  const pm = s.payMethod || (s.items && s.items[0] && s.items[0].payMethod) || 'Cash';
                   normalSales.push({
                     id: s.id,
                     ts: Number(s.ts),
@@ -181,7 +182,8 @@ export default function App() {
                     items: s.items || [],
                     total: Number(s.total || 0),
                     paid: Number(s.paid != null ? s.paid : s.total),
-                    balance: Number(s.balance || 0)
+                    balance: Number(s.balance || 0),
+                    payMethod: pm
                   });
                 }
               });
@@ -237,6 +239,7 @@ export default function App() {
               return { ...prev, expenses: [formattedExp, ...(prev.expenses || [])] };
             });
           } else {
+            const pm = row.payMethod || (row.items && row.items[0] && row.items[0].payMethod) || 'Cash';
             const formatted = {
               id: row.id,
               ts: Number(row.ts),
@@ -246,7 +249,8 @@ export default function App() {
               items: row.items || [],
               total: Number(row.total || 0),
               paid: Number(row.paid != null ? row.paid : row.total),
-              balance: Number(row.balance || 0)
+              balance: Number(row.balance || 0),
+              payMethod: pm
             };
             setState(prev => {
               if (prev.sales.some(s => s.id === formatted.id)) return prev;
@@ -350,18 +354,22 @@ export default function App() {
   };
 
   // Handle saving new sale from Team POS
-  const handleSaveSaleFromTeam = async ({ cart, selStaff, fCust, fPhone, cartTotal, paidVal, cartBalance }) => {
+  const handleSaveSaleFromTeam = async ({ cart, selStaff, fCust, fPhone, cartTotal, paidVal, cartBalance, payMethod }) => {
     const nextCounter = state.counter + 1;
+    const chosenPayMethod = payMethod || 'Cash';
+    const itemsWithPayMethod = cart.map((it, i) => i === 0 ? { ...it, payMethod: chosenPayMethod } : it);
+
     const newSale = {
       id: "R-" + pad(nextCounter),
       ts: Date.now(),
       staff: selStaff,
       customer: fCust.trim(),
       phone: fPhone.trim(),
-      items: [...cart],
+      items: itemsWithPayMethod,
       total: cartTotal,
       paid: paidVal,
-      balance: cartBalance
+      balance: cartBalance,
+      payMethod: chosenPayMethod
     };
 
     const nextState = {
@@ -400,28 +408,37 @@ export default function App() {
   };
 
   // Handle Mark Paid
-  const handleMarkPaid = async (saleId) => {
+  const handleMarkPaid = async (saleId, payMethodArg) => {
     const targetSale = state.sales.find(s => s.id === saleId);
     if (!targetSale) return;
+
+    let finalPayMethod = payMethodArg;
+    if (!finalPayMethod) {
+      const isOnline = window.confirm(`Mark receipt ${saleId} as Paid via Online Transfer?\n\nClick [OK] for Online Transfer, or [Cancel] for Cash.`);
+      finalPayMethod = isOnline ? 'Online' : 'Cash';
+    }
+
+    const updatedItems = (targetSale.items || []).map((it, i) => i === 0 ? { ...it, payMethod: finalPayMethod } : it);
 
     setState(prev => ({
       ...prev,
       sales: prev.sales.map(s => {
         if (s.id === saleId) {
-          return { ...s, paid: s.total, balance: 0 };
+          return { ...s, paid: s.total, balance: 0, payMethod: finalPayMethod, items: updatedItems };
         }
         return s;
       })
     }));
+
     if (activeModalSale && activeModalSale.id === saleId) {
-      setActiveModalSale(prev => ({ ...prev, paid: prev.total, balance: 0 }));
+      setActiveModalSale(prev => ({ ...prev, paid: prev.total, balance: 0, payMethod: finalPayMethod, items: updatedItems }));
     }
 
     if (supabase) {
       try {
         await supabase
           .from('sales')
-          .update({ paid: targetSale.total, balance: 0 })
+          .update({ paid: targetSale.total, balance: 0, items: updatedItems })
           .eq('id', saleId);
       } catch (err) {
         console.error('Error updating sale in Supabase:', err);
@@ -778,7 +795,7 @@ export default function App() {
                 <span>{money(activeModalSale.total)}</span>
               </div>
               <div className="rc-row" style={{ marginTop: '4px' }}>
-                <span>Paid</span>
+                <span>Paid ({activeModalSale.payMethod === 'Online' ? '💳 Online' : '💵 Cash'})</span>
                 <span>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
               </div>
               {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
@@ -788,6 +805,7 @@ export default function App() {
                 </div>
               )}
               <div className="rc-foot">
+                Payment: {activeModalSale.payMethod === 'Online' ? 'Online Transfer (Bank/JazzCash)' : 'Cash'}<br />
                 Please keep this receipt for photo collection. Thank you!<br />Powered By Lunar Ai
               </div>
             </div>
@@ -798,13 +816,22 @@ export default function App() {
               🖨️ Print Receipt
             </button>
             {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
-              <button
-                className="btn primary"
-                style={{ flex: 1, background: 'var(--emerald)' }}
-                onClick={() => handleMarkPaid(activeModalSale.id)}
-              >
-                Mark Paid
-              </button>
+              <>
+                <button
+                  className="btn primary"
+                  style={{ flex: 1, background: 'var(--emerald)', borderColor: 'var(--emerald)' }}
+                  onClick={() => handleMarkPaid(activeModalSale.id, 'Cash')}
+                >
+                  💵 Paid (Cash)
+                </button>
+                <button
+                  className="btn primary"
+                  style={{ flex: 1, background: '#7C3AED', borderColor: '#7C3AED' }}
+                  onClick={() => handleMarkPaid(activeModalSale.id, 'Online')}
+                >
+                  💳 Paid (Online)
+                </button>
+              </>
             )}
             <button className="btn ghost" style={{ flex: 1 }} onClick={() => setActiveModalSale(null)}>
               Close

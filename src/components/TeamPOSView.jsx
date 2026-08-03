@@ -46,6 +46,7 @@ export default function TeamPOSView({
   const [fCust, setFCust] = useState('');
   const [fPhone, setFPhone] = useState('');
   const [fPaid, setFPaid] = useState('');
+  const [payMethod, setPayMethod] = useState('Cash'); // 'Cash' or 'Online'
 
   // Expense form state for team
   const [expTitle, setExpTitle] = useState('');
@@ -137,14 +138,21 @@ export default function TeamPOSView({
     }
     if (qty < 1) return;
 
+    const isPhotoItem = selCat === 'albexp' || selCat === 'albro' || selCat === '1x1exp' || selCat === '1x1ro';
+    const photoCount = isPhotoItem ? Number(selPages || 0) * qty : 0;
+    const isExp = selCat === 'albexp' || selCat === '1x1exp';
+
     setCart(prevCart => {
       const existingIndex = prevCart.findIndex(item => item.label === label && item.price === price);
       if (existingIndex > -1) {
         const updated = [...prevCart];
         updated[existingIndex].qty += qty;
+        if (isPhotoItem) {
+          updated[existingIndex].photoCount = (updated[existingIndex].photoCount || 0) + photoCount;
+        }
         return updated;
       } else {
-        return [...prevCart, { label, cat: meta, price, qty }];
+        return [...prevCart, { label, cat: meta, price, qty, photoCount, isExp, selCat }];
       }
     });
 
@@ -152,8 +160,36 @@ export default function TeamPOSView({
     setFQty(1);
   };
 
-  // Cart math
-  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  // Automated Cart Math & Photo Bundle Pricing Rule (Qty = Number of Persons)
+  const rawCartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+  const photoItems = cart.filter(it => it.cat === 'Pictures' || it.cat === '1x1' || (it.photoCount && it.photoCount > 0));
+  const totalPhotos = photoItems.reduce((sum, it) => sum + (it.photoCount || 0), 0);
+  const sumIndividualPhotoPrices = photoItems.reduce((sum, it) => sum + (it.price * it.qty), 0);
+
+  // Maximum persons count across photo items (Qty = number of persons)
+  const personsCount = photoItems.reduce((max, it) => Math.max(max, Number(it.qty || 1)), 1);
+
+  let photoBundleDiscount = 0;
+  if (photoItems.length >= 1 && totalPhotos > 0 && personsCount >= 1) {
+    const hasExp = photoItems.some(it => it.isExp);
+    const baseRate = hasExp ? 200 : 150;
+
+    // Photos allocated per person
+    const photosPerPerson = Math.ceil(totalPhotos / personsCount);
+    const blocksPerPerson = Math.ceil(photosPerPerson / 4);
+
+    if (blocksPerPerson >= 1) {
+      const pricePerPerson = baseRate + (blocksPerPerson - 1) * 50;
+      const bundleTargetPrice = personsCount * pricePerPerson;
+
+      if (sumIndividualPhotoPrices > bundleTargetPrice) {
+        photoBundleDiscount = sumIndividualPhotoPrices - bundleTargetPrice;
+      }
+    }
+  }
+
+  const cartTotal = rawCartTotal - photoBundleDiscount;
   const paidVal = Number(fPaid) || 0;
   const rawBalance = cartTotal - paidVal;
   const cartBalance = rawBalance < 0 ? 0 : rawBalance;
@@ -161,19 +197,32 @@ export default function TeamPOSView({
   // Save sale & show receipt
   const handleSave = () => {
     if (!cart.length) return;
+
+    let finalCart = [...cart];
+    if (photoBundleDiscount > 0) {
+      finalCart.push({
+        label: `🎁 Multi-Photo Combined Offer (${totalPhotos} pics)`,
+        cat: 'Discount',
+        price: -photoBundleDiscount,
+        qty: 1
+      });
+    }
+
     onSaveSale({
-      cart,
+      cart: finalCart,
       selStaff,
       fCust,
       fPhone,
       cartTotal,
       paidVal,
-      cartBalance
+      cartBalance,
+      payMethod
     });
     setCart([]);
     setFCust('');
     setFPhone('');
     setFPaid('');
+    setPayMethod('Cash');
   };
 
   // Submit expense from team
@@ -389,6 +438,15 @@ export default function TeamPOSView({
                       <button className="x" title="Remove" onClick={() => setCart(cart.filter((_, idx) => idx !== i))}>×</button>
                     </div>
                   ))}
+                  {photoBundleDiscount > 0 && (
+                    <div className="line" style={{ background: '#ECFDF5', border: '1px solid #10B981', borderRadius: '8px', padding: '8px 12px', marginTop: '6px' }}>
+                      <div className="d">
+                        <div className="t" style={{ fontWeight: 700, color: '#059669' }}>🎁 Multi-Photo Combined Offer</div>
+                        <div className="m" style={{ color: '#047857' }}>Auto 4-pic block discount ({totalPhotos} pics)</div>
+                      </div>
+                      <div className="amt mono" style={{ fontWeight: 800, color: '#059669' }}>- {money(photoBundleDiscount)}</div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -399,11 +457,20 @@ export default function TeamPOSView({
 
               <div className="divider"></div>
 
-              <div className="field">
-                <label>Served by Staff Member</label>
-                <select value={selStaff} onChange={(e) => setSelStaff(e.target.value)}>
-                  {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
+              <div className="row r2">
+                <div className="field">
+                  <label>Served by Staff Member</label>
+                  <select value={selStaff} onChange={(e) => setSelStaff(e.target.value)}>
+                    {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Payment Method</label>
+                  <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+                    <option value="Cash">💵 Cash</option>
+                    <option value="Online">💳 Online (Bank/JazzCash)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="row r2">
@@ -514,22 +581,29 @@ export default function TeamPOSView({
                       <th>Date &amp; Time</th>
                       <th>Staff</th>
                       <th>Customer</th>
+                      <th>Payment</th>
                       <th className="num">Total</th>
                       <th className="num">Paid</th>
                       <th className="num">Balance</th>
-                      <th style={{ textAlign: 'center' }}>Action</th>
+                      <th style={{ textAlign: 'center' }}>Mark Paid Mode</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredSales.map(s => {
                       const paid = s.paid != null ? s.paid : s.total;
                       const bal = s.balance != null ? s.balance : 0;
+                      const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
                       return (
                         <tr key={s.id} className="click" onClick={() => setActiveModalSale(s)}>
                           <td className="mono" style={{ fontWeight: 700 }}>{s.id}</td>
                           <td>{fmtDate(s.ts)}</td>
                           <td>{s.staff || '—'}</td>
                           <td>{s.customer || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                          <td>
+                            <span className="badge" style={{ margin: 0, background: pm === 'Online' ? '#F3E8FF' : '#F1F5F9', color: pm === 'Online' ? '#7C3AED' : '#475569', fontSize: '11px' }}>
+                              {pm === 'Online' ? '💳 Online' : '💵 Cash'}
+                            </span>
+                          </td>
                           <td className="num mono">{money(s.total)}</td>
                           <td className="num mono">{money(paid)}</td>
                           <td className="num">
@@ -541,15 +615,29 @@ export default function TeamPOSView({
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             {bal > 0 ? (
-                              <button
-                                className="btn primary sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onMarkPaid(s.id);
-                                }}
-                              >
-                                Mark Paid
-                              </button>
+                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                <button
+                                  className="btn primary sm"
+                                  title="Mark Paid as Cash"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMarkPaid(s.id, 'Cash');
+                                  }}
+                                >
+                                  💵 Cash
+                                </button>
+                                <button
+                                  className="btn primary sm"
+                                  style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
+                                  title="Mark Paid as Online"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMarkPaid(s.id, 'Online');
+                                  }}
+                                >
+                                  💳 Online
+                                </button>
+                              </div>
                             ) : (
                               <span style={{ color: 'var(--muted)' }}>—</span>
                             )}

@@ -865,6 +865,7 @@ export default function AdminDashboard({
                       <th>Date &amp; Time</th>
                       <th>Staff</th>
                       <th>Customer</th>
+                      <th>Payment</th>
                       <th className="num">Total</th>
                       <th className="num">Paid</th>
                       <th className="num">Balance</th>
@@ -875,12 +876,18 @@ export default function AdminDashboard({
                     {filteredSales.map(s => {
                       const paid = s.paid != null ? s.paid : s.total;
                       const bal = s.balance != null ? s.balance : 0;
+                      const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
                       return (
                         <tr key={s.id} className="click" onClick={() => setActiveModalSale(s)}>
                           <td className="mono" style={{ fontWeight: 700 }}>{s.id}</td>
                           <td>{fmtDate(s.ts)}</td>
                           <td>{s.staff || '—'}</td>
                           <td>{s.customer || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                          <td>
+                            <span className="badge" style={{ margin: 0, background: pm === 'Online' ? '#F3E8FF' : '#F1F5F9', color: pm === 'Online' ? '#7C3AED' : '#475569', fontSize: '11px' }}>
+                              {pm === 'Online' ? '💳 Online' : '💵 Cash'}
+                            </span>
+                          </td>
                           <td className="num mono">{money(s.total)}</td>
                           <td className="num mono">{money(paid)}</td>
                           <td className="num">
@@ -893,15 +900,29 @@ export default function AdminDashboard({
                           <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                               {bal > 0 && (
-                                <button
-                                  className="btn primary sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onMarkPaid(s.id);
-                                  }}
-                                >
-                                  Mark Paid
-                                </button>
+                                <>
+                                  <button
+                                    className="btn primary sm"
+                                    title="Mark Paid as Cash"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onMarkPaid(s.id, 'Cash');
+                                    }}
+                                  >
+                                    💵 Cash
+                                  </button>
+                                  <button
+                                    className="btn primary sm"
+                                    style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
+                                    title="Mark Paid as Online"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onMarkPaid(s.id, 'Online');
+                                    }}
+                                  >
+                                    💳 Online
+                                  </button>
+                                </>
                               )}
                               <button
                                 className="btn danger sm"
