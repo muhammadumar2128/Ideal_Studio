@@ -328,11 +328,17 @@ export default function App() {
     };
   }, []);
 
-  // Helper to sync updated settings to Supabase
+  // Helper to sync updated settings to Supabase and LocalStorage
   const syncSettingsToCloud = async (newState) => {
+    try {
+      localStorage.setItem('ideal_studio_pos_v2', JSON.stringify(newState));
+    } catch (err) {
+      console.warn('LocalStorage save error:', err);
+    }
+
     if (!supabase) return;
     try {
-      await supabase.from('studio_settings').upsert({
+      const { error } = await supabase.from('studio_settings').upsert({
         id: 1,
         studio_name: newState.studio,
         counter: newState.counter,
@@ -346,9 +352,12 @@ export default function App() {
         one_by_one_ro: newState.oneByOneRo,
         sets: newState.sets,
         misc: newState.misc,
-        expenses: newState.expenses,
         updated_at: new Date().toISOString()
       });
+
+      if (error) {
+        console.error('Supabase settings upsert error:', error.message);
+      }
     } catch (e) {
       console.error('Error syncing settings to Supabase:', e);
     }
