@@ -285,7 +285,8 @@ export default function App() {
                 items: row.items || [],
                 total: Number(row.total || 0),
                 paid: Number(row.paid != null ? row.paid : row.total),
-                balance: Number(row.balance || 0)
+                balance: Number(row.balance || 0),
+                payMethod: row.payMethod || (row.items && row.items[0] && row.items[0].payMethod) || 'Cash'
               } : s)
             }));
           }
