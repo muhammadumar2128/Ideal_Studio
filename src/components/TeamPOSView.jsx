@@ -6,7 +6,11 @@ const PP = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56];
 const TYPES = [["normal", "Normal EXP"], ["bg", "BG Change"], ["reorder", "Re-order"], ["urgent", "Re-order (Urgent)"]];
 
 function money(n) {
-  return CUR + " " + Number(n || 0).toLocaleString("en-PK");
+  const num = Number(n || 0);
+  if (num < 0) {
+    return "- " + CUR + " " + Math.abs(num).toLocaleString("en-PK");
+  }
+  return CUR + " " + num.toLocaleString("en-PK");
 }
 
 function fmtDate(ts) {
@@ -16,6 +20,32 @@ function fmtDate(ts) {
 
 function isSameDay(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+
+function getSaleTotals(s) {
+  const items = s.items || [];
+  const grossTotal = items.filter(it => it.cat !== 'Discount' && Number(it.price) > 0).reduce((sum, it) => sum + (Number(it.price) * Number(it.qty || 1)), 0);
+  const discItems = items.filter(it => it.cat === 'Discount' || Number(it.price) < 0);
+  const discAmt = discItems.reduce((sum, it) => sum + Math.abs(Number(it.price || 0) * Number(it.qty || 1)), 0);
+
+  let realNetTotal = Number(s.total || 0);
+  if (discAmt > 0) {
+    if (s.total === grossTotal || s.total > (grossTotal - discAmt)) {
+      realNetTotal = Math.max(0, grossTotal - discAmt);
+    }
+  } else if (!s.total && grossTotal > 0) {
+    realNetTotal = grossTotal;
+  }
+
+  let realPaid = s.paid != null ? Number(s.paid) : realNetTotal;
+  if (discAmt > 0 && realPaid === grossTotal) {
+    realPaid = realNetTotal;
+  }
+
+  const origBal = s.balance != null ? Number(s.balance) : 0;
+  const realBalance = origBal > 0 ? Math.max(0, realNetTotal - realPaid) : 0;
+
+  return { grossTotal, discAmt, realNetTotal, realPaid, realBalance };
 }
 
 export default function TeamPOSView({
@@ -47,6 +77,10 @@ export default function TeamPOSView({
   const [fPhone, setFPhone] = useState('');
   const [fPaid, setFPaid] = useState('');
   const [payMethod, setPayMethod] = useState('Cash'); // 'Cash' or 'Online'
+
+  // Discount state (Always-visible field for staff when customer asks for discount)
+  const [discountVal, setDiscountVal] = useState('');
+  const [discountType, setDiscountType] = useState('rs'); // 'rs' or 'percent'
 
   // Expense form state for team
   const [expTitle, setExpTitle] = useState('');
@@ -189,8 +223,22 @@ export default function TeamPOSView({
     }
   }
 
-  const cartTotal = rawCartTotal - photoBundleDiscount;
-  const paidVal = Number(fPaid) || 0;
+  const subtotalAfterBundle = Math.max(0, rawCartTotal - photoBundleDiscount);
+
+  let manualDiscountAmount = 0;
+  if (discountVal) {
+    const val = Number(discountVal) || 0;
+    if (val > 0) {
+      if (discountType === 'percent') {
+        manualDiscountAmount = Math.round((subtotalAfterBundle * Math.min(val, 100)) / 100);
+      } else {
+        manualDiscountAmount = Math.min(val, subtotalAfterBundle);
+      }
+    }
+  }
+
+  const cartTotal = Math.max(0, subtotalAfterBundle - manualDiscountAmount);
+  const paidVal = fPaid.trim() !== '' ? (Number(fPaid) || 0) : cartTotal;
   const rawBalance = cartTotal - paidVal;
   const cartBalance = rawBalance < 0 ? 0 : rawBalance;
 
@@ -204,6 +252,18 @@ export default function TeamPOSView({
         label: `🎁 Multi-Photo Combined Offer (${totalPhotos} pics)`,
         cat: 'Discount',
         price: -photoBundleDiscount,
+        qty: 1
+      });
+    }
+
+    if (manualDiscountAmount > 0) {
+      const discLabel = discountType === 'percent'
+        ? `🏷️ Customer Discount (${discountVal}%)`
+        : `🏷️ Customer Discount`;
+      finalCart.push({
+        label: discLabel,
+        cat: 'Discount',
+        price: -manualDiscountAmount,
         qty: 1
       });
     }
@@ -223,6 +283,7 @@ export default function TeamPOSView({
     setFPhone('');
     setFPaid('');
     setPayMethod('Cash');
+    setDiscountVal('');
   };
 
   // Submit expense from team
@@ -240,23 +301,36 @@ export default function TeamPOSView({
     alert("Expense logged successfully!");
   };
 
-  // Records filtering
+  // Records filtering (Staff view limited to last 3 days)
   const now = new Date();
+  const threeDaysAgo = new Date();
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
+  threeDaysAgo.setHours(0, 0, 0, 0);
+
   const salesList = state.sales || [];
   const expensesList = state.expenses || [];
 
-  const filteredSales = salesList.filter(s => {
+  // Staff POS view is restricted to past 3 days of records
+  const recentSalesList = salesList.filter(s => {
+    const d = new Date(s.ts);
+    return d >= threeDaysAgo;
+  });
+
+  const filteredSales = recentSalesList.filter(s => {
     const d = new Date(s.ts);
     if (filterStaff && s.staff !== filterStaff) return false;
-    const bal = s.balance != null ? s.balance : 0;
-    if (filterStatus === "balance" && bal <= 0) return false;
-    if (filterStatus === "paid" && bal > 0) return false;
+    const { realBalance } = getSaleTotals(s);
+    if (filterStatus === "balance" && realBalance <= 0) return false;
+    if (filterStatus === "paid" && realBalance > 0) return false;
     const q = searchBox.toLowerCase().trim();
     if (q && s.id.toLowerCase().indexOf(q) < 0 && (s.customer || "").toLowerCase().indexOf(q) < 0) return false;
     return true;
   });
 
-  const pendingSalesCount = salesList.filter(s => (s.balance != null ? s.balance : 0) > 0).length;
+  const pendingSalesCount = recentSalesList.filter(s => {
+    const { realBalance } = getSaleTotals(s);
+    return realBalance > 0;
+  }).length;
 
   // Today totals
   const todaySalesTotal = salesList
@@ -447,6 +521,23 @@ export default function TeamPOSView({
                       <div className="amt mono" style={{ fontWeight: 800, color: '#059669' }}>- {money(photoBundleDiscount)}</div>
                     </div>
                   )}
+
+                  {manualDiscountAmount > 0 && (
+                    <div className="line" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '8px', padding: '8px 12px', marginTop: '6px' }}>
+                      <div className="d">
+                        <div className="t" style={{ fontWeight: 700, color: '#DC2626' }}>🏷️ Customer Requested Discount</div>
+                        <div className="m" style={{ color: '#B91C1C' }}>{discountType === 'percent' ? `${discountVal}% off` : 'Manual discount'}</div>
+                      </div>
+                      <div className="amt mono" style={{ fontWeight: 800, color: '#DC2626' }}>- {money(manualDiscountAmount)}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(photoBundleDiscount > 0 || manualDiscountAmount > 0) && (
+                <div style={{ fontSize: '12.5px', opacity: 0.8, display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span>Gross Subtotal</span>
+                  <span className="mono">{money(rawCartTotal)}</span>
                 </div>
               )}
 
@@ -486,6 +577,31 @@ export default function TeamPOSView({
 
               <div className="row r2">
                 <div className="field">
+                  <label style={{ color: manualDiscountAmount > 0 ? '#DC2626' : undefined, fontWeight: 700 }}>
+                    🏷️ Discount Amount (optional)
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      className="mono"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      value={discountVal}
+                      onChange={(e) => setDiscountVal(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <select
+                      value={discountType}
+                      onChange={(e) => setDiscountType(e.target.value)}
+                      style={{ width: '65px', padding: '4px', fontWeight: 700 }}
+                    >
+                      <option value="rs">Rs</option>
+                      <option value="percent">%</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="field">
                   <label>Paid Amount ({CUR})</label>
                   <input
                     className="mono"
@@ -497,6 +613,9 @@ export default function TeamPOSView({
                     onChange={(e) => setFPaid(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="row r1" style={{ marginTop: '8px' }}>
                 <div className="field">
                   <label>Remaining Balance</label>
                   <div
@@ -539,8 +658,8 @@ export default function TeamPOSView({
       {teamTab === 'records' && (
         <div className="card">
           <h2>
-            <span>📋 All Sales &amp; Receipts</span>
-            <span className="badge">{filteredSales.length} transaction(s)</span>
+            <span>📋 Sales &amp; Receipts (Past 3 Days)</span>
+            <span className="badge">{filteredSales.length} transaction(s) · 3 Days History</span>
           </h2>
           <div className="body">
             <div className="filters">
@@ -583,6 +702,7 @@ export default function TeamPOSView({
                       <th>Customer</th>
                       <th>Payment</th>
                       <th className="num">Total</th>
+                      <th className="num">Discount</th>
                       <th className="num">Paid</th>
                       <th className="num">Balance</th>
                       <th style={{ textAlign: 'center' }}>Mark Paid Mode</th>
@@ -590,8 +710,7 @@ export default function TeamPOSView({
                   </thead>
                   <tbody>
                     {filteredSales.map(s => {
-                      const paid = s.paid != null ? s.paid : s.total;
-                      const bal = s.balance != null ? s.balance : 0;
+                      const { grossTotal, discAmt, realNetTotal, realPaid, realBalance } = getSaleTotals(s);
                       const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
                       return (
                         <tr key={s.id} className="click" onClick={() => setActiveModalSale(s)}>
@@ -604,17 +723,29 @@ export default function TeamPOSView({
                               {pm === 'Online' ? '💳 Online' : '💵 Cash'}
                             </span>
                           </td>
-                          <td className="num mono">{money(s.total)}</td>
-                          <td className="num mono">{money(paid)}</td>
                           <td className="num">
-                            {bal > 0 ? (
-                              <span className="mono" style={{ color: 'var(--danger)', fontWeight: 800 }}>{money(bal)}</span>
+                            <div className="mono" style={{ fontWeight: 800 }}>{money(realNetTotal)}</div>
+                            {discAmt > 0 && (
+                              <div style={{ fontSize: '10.5px', color: 'var(--muted)' }}>Subtotal: {money(grossTotal)}</div>
+                            )}
+                          </td>
+                          <td className="num">
+                            {discAmt > 0 ? (
+                              <span className="mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(discAmt)}</span>
+                            ) : (
+                              <span style={{ color: 'var(--muted)' }}>—</span>
+                            )}
+                          </td>
+                          <td className="num mono">{money(realPaid)}</td>
+                          <td className="num">
+                            {realBalance > 0 ? (
+                              <span className="mono" style={{ color: 'var(--danger)', fontWeight: 800 }}>{money(realBalance)}</span>
                             ) : (
                               <span style={{ color: 'var(--emerald)', fontWeight: 700 }}>Paid</span>
                             )}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            {bal > 0 ? (
+                            {realBalance > 0 ? (
                               <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                                 <button
                                   className="btn primary sm"

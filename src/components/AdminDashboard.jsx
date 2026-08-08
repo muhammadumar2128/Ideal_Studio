@@ -3,7 +3,11 @@ import React, { useState } from 'react';
 const CUR = "Rs";
 
 function money(n) {
-  return CUR + " " + Number(n || 0).toLocaleString("en-PK");
+  const num = Number(n || 0);
+  if (num < 0) {
+    return "- " + CUR + " " + Math.abs(num).toLocaleString("en-PK");
+  }
+  return CUR + " " + num.toLocaleString("en-PK");
 }
 
 function fmtDate(ts) {
@@ -20,6 +24,32 @@ function fmtMonthKey(monthKey) {
 
 function isSameDay(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+
+function getSaleTotals(s) {
+  const items = s.items || [];
+  const grossTotal = items.filter(it => it.cat !== 'Discount' && Number(it.price) > 0).reduce((sum, it) => sum + (Number(it.price) * Number(it.qty || 1)), 0);
+  const discItems = items.filter(it => it.cat === 'Discount' || Number(it.price) < 0);
+  const discAmt = discItems.reduce((sum, it) => sum + Math.abs(Number(it.price || 0) * Number(it.qty || 1)), 0);
+
+  let realNetTotal = Number(s.total || 0);
+  if (discAmt > 0) {
+    if (s.total === grossTotal || s.total > (grossTotal - discAmt)) {
+      realNetTotal = Math.max(0, grossTotal - discAmt);
+    }
+  } else if (!s.total && grossTotal > 0) {
+    realNetTotal = grossTotal;
+  }
+
+  let realPaid = s.paid != null ? Number(s.paid) : realNetTotal;
+  if (discAmt > 0 && realPaid === grossTotal) {
+    realPaid = realNetTotal;
+  }
+
+  const origBal = s.balance != null ? Number(s.balance) : 0;
+  const realBalance = origBal > 0 ? Math.max(0, realNetTotal - realPaid) : 0;
+
+  return { grossTotal, discAmt, realNetTotal, realPaid, realBalance };
 }
 
 function isYesterday(d) {
@@ -98,6 +128,7 @@ export default function AdminDashboard({
 
   let sToday = 0, sYesterday = 0, sWeek = 0, sLastWeek = 0, sMonth = 0, sLastMonth = 0, sTotalAll = 0, totalPendingBal = 0, paidCount = 0;
   let expToday = 0, expYesterday = 0, expWeek = 0, expLastWeek = 0, expMonth = 0, expLastMonth = 0, expTotalAll = 0;
+  let discToday = 0, discMonth = 0, discTotalAll = 0, discCountAll = 0;
 
   const categoryTotals = { Print: 0, Frame: 0, Pictures: 0, '1x1': 0, Set: 0, Item: 0, Custom: 0 };
   const staffPerformance = {};
@@ -122,6 +153,16 @@ export default function AdminDashboard({
     const paid = Number(s.paid != null ? s.paid : total);
     const bal = Number(s.balance != null ? s.balance : Math.max(0, total - paid));
 
+    // Discount calculation for this sale
+    const discItems = (s.items || []).filter(it => it.cat === 'Discount' || Number(it.price) < 0);
+    const saleDiscount = discItems.reduce((sum, it) => sum + Math.abs(Number(it.price || 0) * Number(it.qty || 1)), 0);
+    if (saleDiscount > 0) {
+      discTotalAll += saleDiscount;
+      discCountAll += 1;
+      if (isSameDay(d, now)) discToday += saleDiscount;
+      if (isThisMonth(d)) discMonth += saleDiscount;
+    }
+
     sTotalAll += total;
     totalPendingBal += bal;
     if (bal <= 0) paidCount++;
@@ -136,9 +177,13 @@ export default function AdminDashboard({
     // Staff aggregation
     const staffName = s.staff || 'Unknown';
     if (!staffPerformance[staffName]) {
-      staffPerformance[staffName] = { revenue: 0, count: 0 };
+      staffPerformance[staffName] = { revenue: 0, count: 0, discounts: 0 };
     }
     staffPerformance[staffName].revenue += total;
+    staffPerformance[staffName].count += 1;
+    if (saleDiscount > 0) {
+      staffPerformance[staffName].discounts += saleDiscount;
+    }
     staffPerformance[staffName].count += 1;
 
     // Category aggregation
@@ -369,6 +414,13 @@ export default function AdminDashboard({
           <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Expenses</div>
           <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#DC2626', marginTop: '4px' }}>{money(expToday)}</div>
           <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>{expensesList.filter(e => isSameDay(new Date(e.ts), now)).length} expense(s) logged</div>
+        </div>
+
+        {/* TODAY DISCOUNTS GIVEN */}
+        <div className="card stat-kpi" style={{ padding: '18px 20px', borderLeft: '4px solid #D97706' }}>
+          <div className="k" style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Today's Discounts</div>
+          <div className="v mono" style={{ fontSize: '24px', fontWeight: 800, color: '#D97706', marginTop: '4px' }}>{money(discToday)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '6px' }}>Discount granted to customers</div>
         </div>
 
         {/* TODAY NET INCOME / PROFIT */}
@@ -867,6 +919,7 @@ export default function AdminDashboard({
                       <th>Customer</th>
                       <th>Payment</th>
                       <th className="num">Total</th>
+                      <th className="num">Discount</th>
                       <th className="num">Paid</th>
                       <th className="num">Balance</th>
                       <th style={{ textAlign: 'center' }}>Action</th>
@@ -874,8 +927,7 @@ export default function AdminDashboard({
                   </thead>
                   <tbody>
                     {filteredSales.map(s => {
-                      const paid = s.paid != null ? s.paid : s.total;
-                      const bal = s.balance != null ? s.balance : 0;
+                      const { grossTotal, discAmt, realNetTotal, realPaid, realBalance } = getSaleTotals(s);
                       const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
                       return (
                         <tr key={s.id} className="click" onClick={() => setActiveModalSale(s)}>
@@ -888,18 +940,30 @@ export default function AdminDashboard({
                               {pm === 'Online' ? '💳 Online' : '💵 Cash'}
                             </span>
                           </td>
-                          <td className="num mono">{money(s.total)}</td>
-                          <td className="num mono">{money(paid)}</td>
                           <td className="num">
-                            {bal > 0 ? (
-                              <span className="mono" style={{ color: 'var(--danger)', fontWeight: 800 }}>{money(bal)}</span>
+                            <div className="mono" style={{ fontWeight: 800 }}>{money(realNetTotal)}</div>
+                            {discAmt > 0 && (
+                              <div style={{ fontSize: '10.5px', color: 'var(--muted)' }}>Subtotal: {money(grossTotal)}</div>
+                            )}
+                          </td>
+                          <td className="num">
+                            {discAmt > 0 ? (
+                              <span className="mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(discAmt)}</span>
+                            ) : (
+                              <span style={{ color: 'var(--muted)' }}>—</span>
+                            )}
+                          </td>
+                          <td className="num mono">{money(realPaid)}</td>
+                          <td className="num">
+                            {realBalance > 0 ? (
+                              <span className="mono" style={{ color: 'var(--danger)', fontWeight: 800 }}>{money(realBalance)}</span>
                             ) : (
                               <span style={{ color: '#059669', fontWeight: 700 }}>Paid</span>
                             )}
                           </td>
                           <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              {bal > 0 && (
+                              {realBalance > 0 && (
                                 <>
                                   <button
                                     className="btn primary sm"

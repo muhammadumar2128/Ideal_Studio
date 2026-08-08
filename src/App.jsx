@@ -75,7 +75,11 @@ function loadInitialState() {
 }
 
 function money(n) {
-  return CUR + " " + Number(n || 0).toLocaleString("en-PK");
+  const num = Number(n || 0);
+  if (num < 0) {
+    return "- " + CUR + " " + Math.abs(num).toLocaleString("en-PK");
+  }
+  return CUR + " " + num.toLocaleString("en-PK");
 }
 
 function pad(n) {
@@ -795,7 +799,7 @@ export default function App() {
                     <span>{it.label}</span>
                     <span>{money(it.price * it.qty)}</span>
                   </div>
-                  <div className="sub">{it.qty} × {money(it.price)}</div>
+                  {it.cat !== 'Discount' && <div className="sub">{it.qty} × {money(it.price)}</div>}
                 </div>
               ))}
               <div className="rc-sep"></div>
