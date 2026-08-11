@@ -49,6 +49,8 @@ function getDefaults() {
     frames,
     albumExp: exp,
     albumRo: ro,
+    ctcExp: JSON.parse(JSON.stringify(exp)),
+    ctcRo: JSON.parse(JSON.stringify(ro)),
     oneByOneExp: JSON.parse(JSON.stringify(exp)),
     oneByOneRo: JSON.parse(JSON.stringify(ro)),
     sets,
@@ -198,19 +200,32 @@ export default function App() {
 
             if (settingsRes.data) {
               const st = settingsRes.data;
-              if (st.studio_name) updated.studio = st.studio_name;
+              const remoteTime = st.updated_at ? new Date(st.updated_at).getTime() : 0;
+              const localTime = Number(prev._lastLocalUpdate || 0);
+
+              // Only update settings from remote DB if remote DB is newer or local is missing data
+              const isRemoteNewer = remoteTime > localTime;
+
+              if (st.studio_name && (isRemoteNewer || !updated.studio)) updated.studio = st.studio_name;
               if (st.counter != null && st.counter > updated.counter) updated.counter = st.counter;
-              if (st.last_staff) updated.lastStaff = st.last_staff;
-              if (st.staff && Array.isArray(st.staff) && st.staff.length > 0) updated.staff = st.staff;
-              if (st.prints && Object.keys(st.prints).length > 0) updated.prints = st.prints;
-              if (st.frames && Object.keys(st.frames).length > 0) updated.frames = st.frames;
-              if (st.album_exp) updated.albumExp = st.album_exp;
-              if (st.album_ro) updated.albumRo = st.album_ro;
-              if (st.one_by_one_exp) updated.oneByOneExp = st.one_by_one_exp;
-              if (st.one_by_one_ro) updated.oneByOneRo = st.one_by_one_ro;
-              if (st.sets) updated.sets = st.sets;
-              if (st.misc) updated.misc = st.misc;
+              if (st.last_staff && (isRemoteNewer || !updated.lastStaff)) updated.lastStaff = st.last_staff;
+              if (st.staff && Array.isArray(st.staff) && st.staff.length > 0 && (isRemoteNewer || !updated.staff.length)) updated.staff = st.staff;
+              if (st.prints && Object.keys(st.prints).length > 0 && isRemoteNewer) updated.prints = st.prints;
+              if (st.frames && Object.keys(st.frames).length > 0 && isRemoteNewer) updated.frames = st.frames;
+              if (st.album_exp && isRemoteNewer) updated.albumExp = st.album_exp;
+              if (st.album_ro && isRemoteNewer) updated.albumRo = st.album_ro;
+              if (st.ctc_exp && isRemoteNewer) updated.ctcExp = st.ctc_exp;
+              if (st.ctc_ro && isRemoteNewer) updated.ctcRo = st.ctc_ro;
+              if (st.one_by_one_exp && isRemoteNewer) updated.oneByOneExp = st.one_by_one_exp;
+              if (st.one_by_one_ro && isRemoteNewer) updated.oneByOneRo = st.one_by_one_ro;
+              if (st.sets && Array.isArray(st.sets) && (isRemoteNewer || !updated.sets.length)) updated.sets = st.sets;
+              if (st.misc && Array.isArray(st.misc) && (isRemoteNewer || !updated.misc.length)) updated.misc = st.misc;
               if (st.expenses && Array.isArray(st.expenses) && st.expenses.length > 0) updated.expenses = st.expenses;
+
+              // If local settings are newer than DB, push local settings to DB
+              if (localTime > remoteTime) {
+                setTimeout(() => syncSettingsToCloud(updated), 500);
+              }
             }
             return updated;
           });
@@ -317,6 +332,8 @@ export default function App() {
             frames: st.frames || prev.frames,
             albumExp: st.album_exp || prev.albumExp,
             albumRo: st.album_ro || prev.albumRo,
+            ctcExp: st.ctc_exp || prev.ctcExp,
+            ctcRo: st.ctc_ro || prev.ctcRo,
             oneByOneExp: st.one_by_one_exp || prev.oneByOneExp,
             oneByOneRo: st.one_by_one_ro || prev.oneByOneRo,
             sets: st.sets || prev.sets,
@@ -334,8 +351,9 @@ export default function App() {
 
   // Helper to sync updated settings to Supabase and LocalStorage
   const syncSettingsToCloud = async (newState) => {
+    const updatedState = { ...newState, _lastLocalUpdate: Date.now() };
     try {
-      localStorage.setItem('ideal_studio_pos_v2', JSON.stringify(newState));
+      localStorage.setItem(KEY, JSON.stringify(updatedState));
     } catch (err) {
       console.warn('LocalStorage save error:', err);
     }
@@ -344,18 +362,20 @@ export default function App() {
     try {
       const { error } = await supabase.from('studio_settings').upsert({
         id: 1,
-        studio_name: newState.studio,
-        counter: newState.counter,
-        last_staff: newState.lastStaff,
-        staff: newState.staff,
-        prints: newState.prints,
-        frames: newState.frames,
-        album_exp: newState.albumExp,
-        album_ro: newState.albumRo,
-        one_by_one_exp: newState.oneByOneExp,
-        one_by_one_ro: newState.oneByOneRo,
-        sets: newState.sets,
-        misc: newState.misc,
+        studio_name: updatedState.studio,
+        counter: updatedState.counter,
+        last_staff: updatedState.lastStaff,
+        staff: updatedState.staff,
+        prints: updatedState.prints,
+        frames: updatedState.frames,
+        album_exp: updatedState.albumExp,
+        album_ro: updatedState.albumRo,
+        ctc_exp: updatedState.ctcExp,
+        ctc_ro: updatedState.ctcRo,
+        one_by_one_exp: updatedState.oneByOneExp,
+        one_by_one_ro: updatedState.oneByOneRo,
+        sets: updatedState.sets,
+        misc: updatedState.misc,
         updated_at: new Date().toISOString()
       });
 

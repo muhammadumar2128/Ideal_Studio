@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 const CUR = "Rs";
 const SIZES = ["4x6", "5x7", "6x8", "6x9", "8x10", "8x12", "10x12", "10x15", "12x16", "12x18", "16x20", "20x24", "24x30", "24x30 (large)"];
-const PP = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56];
+const defaultPP = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56];
 const TYPES = [["normal", "Normal EXP"], ["bg", "BG Change"], ["reorder", "Re-order"], ["urgent", "Re-order (Urgent)"]];
 
 function money(n) {
@@ -60,6 +60,17 @@ export default function TeamPOSView({
 }) {
   const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses'
   const [cart, setCart] = useState([]);
+
+  // Compute dynamic PP count list from state
+  const PP = Array.from(new Set([
+    ...Object.keys(state.albumExp || {}).map(Number),
+    ...Object.keys(state.albumRo || {}).map(Number),
+    ...Object.keys(state.ctcExp || {}).map(Number),
+    ...Object.keys(state.ctcRo || {}).map(Number),
+    ...Object.keys(state.oneByOneExp || {}).map(Number),
+    ...Object.keys(state.oneByOneRo || {}).map(Number),
+    ...defaultPP
+  ])).filter(n => !isNaN(n) && n > 0).sort((a, b) => a - b);
 
   // Form states for sales
   const [selCat, setSelCat] = useState('print');
@@ -119,6 +130,14 @@ export default function TeamPOSView({
       label = `Pictures ${selPages}PP (Re-order)${bgSuffix}`;
       meta = "Pictures";
       price = Number(state.albumRo[selPages]) || 0;
+    } else if (selCat === "ctcexp") {
+      label = `C.T.C ${selPages}PP (New)${bgSuffix}`;
+      meta = "C.T.C";
+      price = Number((state.ctcExp || state.albumExp)[selPages]) || 0;
+    } else if (selCat === "ctcro") {
+      label = `C.T.C ${selPages}PP (Re-order)${bgSuffix}`;
+      meta = "C.T.C";
+      price = Number((state.ctcRo || state.albumRo)[selPages]) || 0;
     } else if (selCat === "1x1exp") {
       label = `${selPages} 1x1 (New)${bgSuffix}`;
       meta = "1x1";
@@ -172,9 +191,9 @@ export default function TeamPOSView({
     }
     if (qty < 1) return;
 
-    const isPhotoItem = selCat === 'albexp' || selCat === 'albro' || selCat === '1x1exp' || selCat === '1x1ro';
+    const isPhotoItem = selCat === 'albexp' || selCat === 'albro' || selCat === 'ctcexp' || selCat === 'ctcro' || selCat === '1x1exp' || selCat === '1x1ro';
     const photoCount = isPhotoItem ? Number(selPages || 0) * qty : 0;
-    const isExp = selCat === 'albexp' || selCat === '1x1exp';
+    const isExp = selCat === 'albexp' || selCat === 'ctcexp' || selCat === '1x1exp';
 
     setCart(prevCart => {
       const existingIndex = prevCart.findIndex(item => item.label === label && item.price === price);
@@ -197,7 +216,7 @@ export default function TeamPOSView({
   // Automated Cart Math & Photo Bundle Pricing Rule (Qty = Number of Persons)
   const rawCartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
 
-  const photoItems = cart.filter(it => it.cat === 'Pictures' || it.cat === '1x1' || (it.photoCount && it.photoCount > 0));
+  const photoItems = cart.filter(it => it.cat === 'Pictures' || it.cat === 'C.T.C' || it.cat === '1x1' || (it.photoCount && it.photoCount > 0));
   const totalPhotos = photoItems.reduce((sum, it) => sum + (it.photoCount || 0), 0);
   const sumIndividualPhotoPrices = photoItems.reduce((sum, it) => sum + (it.price * it.qty), 0);
 
@@ -375,6 +394,8 @@ export default function TeamPOSView({
                   <option value="frame">🖼️ Frame (by size)</option>
                   <option value="albexp">📷 Pictures — New (EXP)</option>
                   <option value="albro">🔄 Pictures — Re-order (R.O)</option>
+                  <option value="ctcexp">🪪 C.T.C — New (EXP)</option>
+                  <option value="ctcro">🪪 C.T.C — Re-order (R.O)</option>
                   <option value="1x1exp">🆔 1x1 — New (EXP)</option>
                   <option value="1x1ro">🆔 1x1 — Re-order (R.O)</option>
                   <option value="set">🎁 Set / Combo Package</option>
@@ -402,12 +423,12 @@ export default function TeamPOSView({
                 </div>
               )}
 
-              {(selCat === 'albexp' || selCat === 'albro' || selCat === '1x1exp' || selCat === '1x1ro') && (
+              {(selCat === 'albexp' || selCat === 'albro' || selCat === 'ctcexp' || selCat === 'ctcro' || selCat === '1x1exp' || selCat === '1x1ro') && (
                 <div className="row r2">
                   <div className="field">
                     <label>Count / Pages</label>
                     <select value={selPages} onChange={(e) => setSelPages(Number(e.target.value))}>
-                      {PP.map(p => <option key={p} value={p}>{p}{selCat.startsWith('1x1') ? ' 1x1' : ' PP'}</option>)}
+                      {PP.map(p => <option key={p} value={p}>{p}{selCat.startsWith('1x1') ? ' 1x1' : selCat.startsWith('ctc') ? ' C.T.C' : ' PP'}</option>)}
                     </select>
                   </div>
                   <div className="field">

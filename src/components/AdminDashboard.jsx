@@ -108,6 +108,7 @@ export default function AdminDashboard({
   const [newMiscName, setNewMiscName] = useState('');
   const [newMiscPrice, setNewMiscPrice] = useState('');
   const [newPrintSize, setNewPrintSize] = useState('');
+  const [newPhotoCount, setNewPhotoCount] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
 
   // Expense form state
@@ -130,7 +131,7 @@ export default function AdminDashboard({
   let expToday = 0, expYesterday = 0, expWeek = 0, expLastWeek = 0, expMonth = 0, expLastMonth = 0, expTotalAll = 0;
   let discToday = 0, discMonth = 0, discTotalAll = 0, discCountAll = 0;
 
-  const categoryTotals = { Print: 0, Frame: 0, Pictures: 0, '1x1': 0, Set: 0, Item: 0, Custom: 0 };
+  const categoryTotals = { Print: 0, Frame: 0, Pictures: 0, 'C.T.C': 0, '1x1': 0, Set: 0, Item: 0, Custom: 0 };
   const staffPerformance = {};
 
   // Extract all available YYYY-MM keys from transactions & expenses
@@ -267,6 +268,7 @@ export default function AdminDashboard({
     Print: '#2563EB',
     Frame: '#059669',
     Pictures: '#D97706',
+    'C.T.C': '#0284C7',
     '1x1': '#7C3AED',
     Set: '#DB2777',
     Item: '#4B5563',
@@ -317,6 +319,61 @@ export default function AdminDashboard({
 
   const printSizes = Object.keys(state.prints || {});
   const TYPES = [["normal", "Normal EXP"], ["bg", "BG Change"], ["reorder", "Re-order"], ["urgent", "Re-order (Urgent)"]];
+
+  const defaultPP = [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56];
+  const photoCounts = Array.from(new Set([
+    ...Object.keys(state.albumExp || {}).map(Number),
+    ...Object.keys(state.albumRo || {}).map(Number),
+    ...Object.keys(state.ctcExp || {}).map(Number),
+    ...Object.keys(state.ctcRo || {}).map(Number),
+    ...Object.keys(state.oneByOneExp || {}).map(Number),
+    ...Object.keys(state.oneByOneRo || {}).map(Number),
+    ...defaultPP
+  ])).filter(n => !isNaN(n) && n > 0).sort((a, b) => a - b);
+
+  const handleAddPhotoCount = () => {
+    const cnt = Number(newPhotoCount);
+    if (!cnt || cnt <= 0) return;
+    const nextState = {
+      ...state,
+      albumExp: { ...state.albumExp, [cnt]: state.albumExp[cnt] ?? 0 },
+      albumRo: { ...state.albumRo, [cnt]: state.albumRo[cnt] ?? 0 },
+      ctcExp: { ...state.ctcExp, [cnt]: state.ctcExp[cnt] ?? 0 },
+      ctcRo: { ...state.ctcRo, [cnt]: state.ctcRo[cnt] ?? 0 },
+      oneByOneExp: { ...state.oneByOneExp, [cnt]: state.oneByOneExp[cnt] ?? 0 },
+      oneByOneRo: { ...state.oneByOneRo, [cnt]: state.oneByOneRo[cnt] ?? 0 }
+    };
+    setState(nextState);
+    onSyncSettings(nextState);
+    setNewPhotoCount('');
+  };
+
+  const handleDeletePhotoCount = (cnt) => {
+    if (!window.confirm(`Remove photo count option ${cnt}?`)) return;
+    const nextState = { ...state };
+    ['albumExp', 'albumRo', 'ctcExp', 'ctcRo', 'oneByOneExp', 'oneByOneRo'].forEach(key => {
+      if (nextState[key]) {
+        const copy = { ...nextState[key] };
+        delete copy[cnt];
+        nextState[key] = copy;
+      }
+    });
+    setState(nextState);
+    onSyncSettings(nextState);
+  };
+
+  const updatePhotoRate = (categoryKey, cnt, rawVal) => {
+    const val = rawVal === '' ? '' : Number(rawVal) || 0;
+    const nextState = {
+      ...state,
+      [categoryKey]: {
+        ...(state[categoryKey] || {}),
+        [cnt]: val
+      }
+    };
+    setState(nextState);
+    onSyncSettings(nextState);
+  };
 
   // Rate additions
   const handleAddMiscItem = () => {
@@ -1014,6 +1071,121 @@ export default function AdminDashboard({
       {/* TAB 4: RATE LIST & CUSTOM SERVICES EDITOR */}
       {adminTab === 'prices' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* PHOTO COUNT RATES EDITOR (PICTURES, C.T.C, 1x1) */}
+          <div className="card">
+            <h2>📷 Photo Count Rate Management (Pictures, C.T.C &amp; 1x1)</h2>
+            <div className="body">
+              <p className="hint" style={{ marginTop: 0 }}>
+                Edit rates per photo count below. Changes sync instantly to <b>Supabase Cloud Database</b>.
+              </p>
+
+              {/* ADD NEW PHOTO COUNT */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap', padding: '14px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <div style={{ flex: 1, minWidth: '180px' }}>
+                  <label>Add New Photo Count / PP Option</label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="e.g. 60"
+                    value={newPhotoCount}
+                    onChange={(e) => setNewPhotoCount(e.target.value)}
+                  />
+                </div>
+                <button className="btn primary" onClick={handleAddPhotoCount}>
+                  ➕ Add Count Option
+                </button>
+              </div>
+
+              {/* PHOTO COUNT RATES TABLE */}
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Count / PP</th>
+                      <th className="num">Pictures (EXP)</th>
+                      <th className="num">Pictures (R.O)</th>
+                      <th className="num">C.T.C (EXP)</th>
+                      <th className="num">C.T.C (R.O)</th>
+                      <th className="num">1x1 (EXP)</th>
+                      <th className="num">1x1 (R.O)</th>
+                      <th style={{ textAlign: 'center' }}>Remove</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {photoCounts.map(cnt => (
+                      <tr key={cnt}>
+                        <td><b>{cnt} Count</b></td>
+                        <td className="num">
+                          <input
+                            type="number"
+                            min="0"
+                            className="price-in mono"
+                            value={(state.albumExp && state.albumExp[cnt] !== undefined) ? state.albumExp[cnt] : ''}
+                            onChange={(e) => updatePhotoRate('albumExp', cnt, e.target.value)}
+                          />
+                        </td>
+                        <td className="num">
+                          <input
+                            type="number"
+                            min="0"
+                            className="price-in mono"
+                            value={(state.albumRo && state.albumRo[cnt] !== undefined) ? state.albumRo[cnt] : ''}
+                            onChange={(e) => updatePhotoRate('albumRo', cnt, e.target.value)}
+                          />
+                        </td>
+                        <td className="num">
+                          <input
+                            type="number"
+                            min="0"
+                            className="price-in mono"
+                            value={(state.ctcExp && state.ctcExp[cnt] !== undefined) ? state.ctcExp[cnt] : ''}
+                            onChange={(e) => updatePhotoRate('ctcExp', cnt, e.target.value)}
+                          />
+                        </td>
+                        <td className="num">
+                          <input
+                            type="number"
+                            min="0"
+                            className="price-in mono"
+                            value={(state.ctcRo && state.ctcRo[cnt] !== undefined) ? state.ctcRo[cnt] : ''}
+                            onChange={(e) => updatePhotoRate('ctcRo', cnt, e.target.value)}
+                          />
+                        </td>
+                        <td className="num">
+                          <input
+                            type="number"
+                            min="0"
+                            className="price-in mono"
+                            value={(state.oneByOneExp && state.oneByOneExp[cnt] !== undefined) ? state.oneByOneExp[cnt] : ''}
+                            onChange={(e) => updatePhotoRate('oneByOneExp', cnt, e.target.value)}
+                          />
+                        </td>
+                        <td className="num">
+                          <input
+                            type="number"
+                            min="0"
+                            className="price-in mono"
+                            value={(state.oneByOneRo && state.oneByOneRo[cnt] !== undefined) ? state.oneByOneRo[cnt] : ''}
+                            onChange={(e) => updatePhotoRate('oneByOneRo', cnt, e.target.value)}
+                          />
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            className="x"
+                            title="Remove photo count"
+                            onClick={() => handleDeletePhotoCount(cnt)}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           {/* PRINTS & FRAMES RATE EDITOR */}
           <div className="card">
             <h2>📸 Print &amp; Frame Rate Management</h2>
