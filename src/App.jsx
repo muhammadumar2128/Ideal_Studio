@@ -310,12 +310,13 @@ export default function App() {
             }));
           }
         } else if (payload.eventType === 'DELETE') {
-          const oldId = payload.old.id;
-          const isExp = String(oldId).startsWith('EXP-');
-          if (isExp) {
-            setState(prev => ({ ...prev, expenses: (prev.expenses || []).filter(e => e.id !== oldId) }));
-          } else {
-            setState(prev => ({ ...prev, sales: prev.sales.filter(s => s.id !== oldId) }));
+          const oldId = payload.old?.id;
+          if (oldId) {
+            setState(prev => ({
+              ...prev,
+              sales: prev.sales.filter(s => s.id !== oldId),
+              expenses: (prev.expenses || []).filter(e => e.id !== oldId)
+            }));
           }
         }
       })
@@ -542,7 +543,7 @@ export default function App() {
   };
 
   const handleDeleteExpense = async (expId) => {
-    if (!window.confirm("Delete this expense record?")) return;
+    if (!window.confirm("Are you sure you want to permanently delete this expense record?")) return;
     const nextState = {
       ...state,
       expenses: (state.expenses || []).filter(e => e.id !== expId)
@@ -551,7 +552,10 @@ export default function App() {
 
     if (supabase) {
       try {
-        await supabase.from('sales').delete().eq('id', expId);
+        const { error } = await supabase.from('sales').delete().eq('id', expId);
+        if (error) {
+          console.error('Error deleting expense from Supabase:', error.message);
+        }
       } catch (err) {
         console.error('Error deleting expense from Supabase:', err);
       }

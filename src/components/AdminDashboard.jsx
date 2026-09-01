@@ -765,7 +765,7 @@ export default function AdminDashboard({
 
       {/* TAB 2: DAILY EXPENSES & NET INCOME */}
       {adminTab === 'expenses' && (
-        <div className="grid">
+        <div className="grid-side-form">
           {/* LEFT COLUMN: LOG NEW EXPENSE */}
           <div className="card">
             <h2>
@@ -836,7 +836,7 @@ export default function AdminDashboard({
             <div className="body">
               {/* FILTERS */}
               <div className="filters" style={{ marginBottom: '16px' }}>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: '160px' }}>
                   <label>Search Expenses</label>
                   <input
                     className="search"
@@ -885,18 +885,18 @@ export default function AdminDashboard({
                     <tbody>
                       {filteredExpenses.map(e => (
                         <tr key={e.id}>
-                          <td style={{ fontSize: '12.5px' }}>{fmtDate(e.ts)}</td>
-                          <td>{e.staff || '—'}</td>
-                          <td><span className="badge" style={{ margin: 0, fontSize: '10.5px' }}>{e.category}</span></td>
-                          <td style={{ fontWeight: 700 }}>{e.title}</td>
-                          <td className="num mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(e.amount)}</td>
-                          <td style={{ textAlign: 'center' }}>
+                          <td style={{ fontSize: '12.5px', whiteSpace: 'nowrap' }}>{fmtDate(e.ts)}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{e.staff || '—'}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}><span className="badge" style={{ margin: 0, fontSize: '10.5px' }}>{e.category}</span></td>
+                          <td style={{ fontWeight: 700, minWidth: '150px' }}>{e.title}</td>
+                          <td className="num mono" style={{ color: '#DC2626', fontWeight: 800, whiteSpace: 'nowrap' }}>- {money(e.amount)}</td>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <button
-                              className="x"
-                              title="Delete expense"
+                              className="btn danger sm"
+                              title="Delete expense record permanently"
                               onClick={() => onDeleteExpense && onDeleteExpense(e.id)}
                             >
-                              ×
+                              🗑️ Delete
                             </button>
                           </td>
                         </tr>

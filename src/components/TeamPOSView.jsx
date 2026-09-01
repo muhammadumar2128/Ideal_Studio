@@ -807,7 +807,7 @@ export default function TeamPOSView({
 
       {/* TAB 3: LOG COUNTER EXPENSE */}
       {teamTab === 'expenses' && (
-        <div className="grid">
+        <div className="grid-side-form">
           <div className="card">
             <h2>
               <span>💸 Log Daily Counter Expense</span>
