@@ -65,6 +65,8 @@ export default function PlatformLogin({ onLoginSuccess }) {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
               />
             </div>
 
@@ -76,6 +78,9 @@ export default function PlatformLogin({ onLoginSuccess }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
               />
             </div>
 
