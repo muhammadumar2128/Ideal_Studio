@@ -194,8 +194,14 @@ export default function App() {
                 }
               });
 
-              updated.sales = normalSales;
-              if (expList.length > 0) updated.expenses = expList;
+              // Merge remote and local items by id to ensure local unsynced items are not lost
+              const remoteSaleIds = new Set(normalSales.map(s => s.id));
+              const localOnlySales = (prev.sales || []).filter(s => !remoteSaleIds.has(s.id));
+              updated.sales = [...normalSales, ...localOnlySales];
+
+              const remoteExpIds = new Set(expList.map(e => e.id));
+              const localOnlyExp = (prev.expenses || []).filter(e => !remoteExpIds.has(e.id));
+              updated.expenses = [...expList, ...localOnlyExp];
             }
 
             if (settingsRes.data) {
@@ -203,29 +209,30 @@ export default function App() {
               const remoteTime = st.updated_at ? new Date(st.updated_at).getTime() : 0;
               const localTime = Number(prev._lastLocalUpdate || 0);
 
-              // Only update settings from remote DB if remote DB is newer or local is missing data
               const isRemoteNewer = remoteTime > localTime;
 
               if (st.studio_name && (isRemoteNewer || !updated.studio)) updated.studio = st.studio_name;
               if (st.counter != null && st.counter > updated.counter) updated.counter = st.counter;
               if (st.last_staff && (isRemoteNewer || !updated.lastStaff)) updated.lastStaff = st.last_staff;
               if (st.staff && Array.isArray(st.staff) && st.staff.length > 0 && (isRemoteNewer || !updated.staff.length)) updated.staff = st.staff;
-              if (st.prints && Object.keys(st.prints).length > 0 && isRemoteNewer) updated.prints = st.prints;
-              if (st.frames && Object.keys(st.frames).length > 0 && isRemoteNewer) updated.frames = st.frames;
-              if (st.album_exp && isRemoteNewer) updated.albumExp = st.album_exp;
-              if (st.album_ro && isRemoteNewer) updated.albumRo = st.album_ro;
-              if (st.ctc_exp && isRemoteNewer) updated.ctcExp = st.ctc_exp;
-              if (st.ctc_ro && isRemoteNewer) updated.ctcRo = st.ctc_ro;
-              if (st.one_by_one_exp && isRemoteNewer) updated.oneByOneExp = st.one_by_one_exp;
-              if (st.one_by_one_ro && isRemoteNewer) updated.oneByOneRo = st.one_by_one_ro;
-              if (st.sets && Array.isArray(st.sets) && (isRemoteNewer || !updated.sets.length)) updated.sets = st.sets;
-              if (st.misc && Array.isArray(st.misc) && (isRemoteNewer || !updated.misc.length)) updated.misc = st.misc;
-              if (st.expenses && Array.isArray(st.expenses) && st.expenses.length > 0) updated.expenses = st.expenses;
+              if (st.prints && typeof st.prints === 'object' && Object.keys(st.prints).length > 0 && (isRemoteNewer || !Object.keys(updated.prints || {}).length)) updated.prints = st.prints;
+              if (st.frames && typeof st.frames === 'object' && Object.keys(st.frames).length > 0 && (isRemoteNewer || !Object.keys(updated.frames || {}).length)) updated.frames = st.frames;
+              if (st.album_exp && typeof st.album_exp === 'object' && Object.keys(st.album_exp).length > 0 && (isRemoteNewer || !Object.keys(updated.albumExp || {}).length)) updated.albumExp = st.album_exp;
+              if (st.album_ro && typeof st.album_ro === 'object' && Object.keys(st.album_ro).length > 0 && (isRemoteNewer || !Object.keys(updated.albumRo || {}).length)) updated.albumRo = st.album_ro;
+              if (st.ctc_exp && typeof st.ctc_exp === 'object' && Object.keys(st.ctc_exp).length > 0 && (isRemoteNewer || !Object.keys(updated.ctcExp || {}).length)) updated.ctcExp = st.ctc_exp;
+              if (st.ctc_ro && typeof st.ctc_ro === 'object' && Object.keys(st.ctc_ro).length > 0 && (isRemoteNewer || !Object.keys(updated.ctcRo || {}).length)) updated.ctcRo = st.ctc_ro;
+              if (st.one_by_one_exp && typeof st.one_by_one_exp === 'object' && Object.keys(st.one_by_one_exp).length > 0 && (isRemoteNewer || !Object.keys(updated.oneByOneExp || {}).length)) updated.oneByOneExp = st.one_by_one_exp;
+              if (st.one_by_one_ro && typeof st.one_by_one_ro === 'object' && Object.keys(st.one_by_one_ro).length > 0 && (isRemoteNewer || !Object.keys(updated.oneByOneRo || {}).length)) updated.oneByOneRo = st.one_by_one_ro;
+              if (st.sets && Array.isArray(st.sets) && st.sets.length > 0 && (isRemoteNewer || !updated.sets.length)) updated.sets = st.sets;
+              if (st.misc && Array.isArray(st.misc) && st.misc.length > 0 && (isRemoteNewer || !updated.misc.length)) updated.misc = st.misc;
 
-              // If local settings are newer than DB, push local settings to DB
-              if (localTime > remoteTime) {
+              // If local settings are newer or database is missing fields, sync full local settings to cloud
+              if (localTime > remoteTime || !st.updated_at) {
                 setTimeout(() => syncSettingsToCloud(updated), 500);
               }
+            } else if (!settingsRes.error) {
+              // Populate remote settings table if empty
+              setTimeout(() => syncSettingsToCloud(updated), 500);
             }
             return updated;
           });
@@ -323,23 +330,29 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_settings' }, (payload) => {
         if (payload.new) {
           const st = payload.new;
-          setState(prev => ({
-            ...prev,
-            studio: st.studio_name || prev.studio,
-            counter: st.counter != null ? st.counter : prev.counter,
-            lastStaff: st.last_staff || prev.lastStaff,
-            staff: st.staff || prev.staff,
-            prints: st.prints || prev.prints,
-            frames: st.frames || prev.frames,
-            albumExp: st.album_exp || prev.albumExp,
-            albumRo: st.album_ro || prev.albumRo,
-            ctcExp: st.ctc_exp || prev.ctcExp,
-            ctcRo: st.ctc_ro || prev.ctcRo,
-            oneByOneExp: st.one_by_one_exp || prev.oneByOneExp,
-            oneByOneRo: st.one_by_one_ro || prev.oneByOneRo,
-            sets: st.sets || prev.sets,
-            misc: st.misc || prev.misc
-          }));
+          setState(prev => {
+            const remoteTime = st.updated_at ? new Date(st.updated_at).getTime() : 0;
+            const localTime = Number(prev._lastLocalUpdate || 0);
+            if (localTime > remoteTime) return prev;
+
+            return {
+              ...prev,
+              studio: st.studio_name || prev.studio,
+              counter: st.counter != null ? Math.max(st.counter, prev.counter) : prev.counter,
+              lastStaff: st.last_staff || prev.lastStaff,
+              staff: (Array.isArray(st.staff) && st.staff.length > 0) ? st.staff : prev.staff,
+              prints: (st.prints && typeof st.prints === 'object' && Object.keys(st.prints).length > 0) ? st.prints : prev.prints,
+              frames: (st.frames && typeof st.frames === 'object' && Object.keys(st.frames).length > 0) ? st.frames : prev.frames,
+              albumExp: (st.album_exp && typeof st.album_exp === 'object' && Object.keys(st.album_exp).length > 0) ? st.album_exp : prev.albumExp,
+              albumRo: (st.album_ro && typeof st.album_ro === 'object' && Object.keys(st.album_ro).length > 0) ? st.album_ro : prev.albumRo,
+              ctcExp: (st.ctc_exp && typeof st.ctc_exp === 'object' && Object.keys(st.ctc_exp).length > 0) ? st.ctc_exp : prev.ctcExp,
+              ctcRo: (st.ctc_ro && typeof st.ctc_ro === 'object' && Object.keys(st.ctc_ro).length > 0) ? st.ctc_ro : prev.ctcRo,
+              oneByOneExp: (st.one_by_one_exp && typeof st.one_by_one_exp === 'object' && Object.keys(st.one_by_one_exp).length > 0) ? st.one_by_one_exp : prev.oneByOneExp,
+              oneByOneRo: (st.one_by_one_ro && typeof st.one_by_one_ro === 'object' && Object.keys(st.one_by_one_ro).length > 0) ? st.one_by_one_ro : prev.oneByOneRo,
+              sets: (Array.isArray(st.sets) && st.sets.length > 0) ? st.sets : prev.sets,
+              misc: (Array.isArray(st.misc) && st.misc.length > 0) ? st.misc : prev.misc
+            };
+          });
         }
       })
       .subscribe();
@@ -418,7 +431,7 @@ export default function App() {
 
     if (supabase) {
       try {
-        await supabase.from('sales').insert([{
+        const { error: saleErr } = await supabase.from('sales').insert([{
           id: newSale.id,
           ts: newSale.ts,
           staff: newSale.staff,
@@ -429,13 +442,10 @@ export default function App() {
           paid: newSale.paid,
           balance: newSale.balance
         }]);
+        if (saleErr) console.error('Supabase sale insert error:', saleErr);
 
-        await supabase.from('studio_settings').upsert({
-          id: 1,
-          counter: nextCounter,
-          last_staff: selStaff,
-          updated_at: new Date().toISOString()
-        });
+        // Sync full settings state (never partial upsert!)
+        await syncSettingsToCloud(nextState);
       } catch (err) {
         console.error('Error saving to Supabase:', err);
       }
@@ -629,7 +639,7 @@ export default function App() {
     if (supabase) {
       try {
         await supabase.from('sales').delete().neq('id', '');
-        await supabase.from('studio_settings').upsert({ id: 1, counter: 0 });
+        await syncSettingsToCloud(nextState);
       } catch (err) {
         console.error('Error wiping Supabase data:', err);
       }
