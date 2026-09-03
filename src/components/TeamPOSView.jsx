@@ -56,9 +56,12 @@ export default function TeamPOSView({
   onDeleteExpense,
   setActiveModalSale,
   onOpenAdminLogin,
-  isAdminLoggedIn
+  isAdminLoggedIn,
+  onOpenDrawer,
+  onDrawerAdjustment,
+  onCloseDrawer
 }) {
-  const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses'
+  const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses', 'drawer'
   const [cart, setCart] = useState([]);
 
   // Compute dynamic PP count list from state
@@ -102,6 +105,31 @@ export default function TeamPOSView({
   const [searchBox, setSearchBox] = useState('');
   const [filterStaff, setFilterStaff] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+
+  // Cash Drawer & Shift state
+  const [openFloat, setOpenFloat] = useState('5000');
+  const [openStaff, setOpenStaff] = useState(state.lastStaff || (state.staff[0] || 'Umar'));
+  const [openNote, setOpenNote] = useState('');
+  const [showDrawerModal, setShowDrawerModal] = useState(false);
+
+  // Currency Denomination note counts (PKR)
+  const [notes5000, setNotes5000] = useState('');
+  const [notes1000, setNotes1000] = useState('');
+  const [notes500, setNotes500] = useState('');
+  const [notes100, setNotes100] = useState('');
+  const [notes50, setNotes50] = useState('');
+  const [notes20, setNotes20] = useState('');
+  const [notes10, setNotes10] = useState('');
+  const [coins, setCoins] = useState('');
+
+  // Drawer adjustments & closing state
+  const [closeStaff, setCloseStaff] = useState(state.lastStaff || (state.staff[0] || 'Umar'));
+  const [closingNotes, setClosingNotes] = useState('');
+  const [showAdjModal, setShowAdjModal] = useState(false);
+  const [adjType, setAdjType] = useState('in'); // 'in' or 'out'
+  const [adjAmount, setAdjAmount] = useState('');
+  const [adjReason, setAdjReason] = useState('');
+  const [adjStaff, setAdjStaff] = useState(state.lastStaff || (state.staff[0] || 'Umar'));
 
   // Available type options for selected print size
   const currentPrintTypes = TYPES.filter(([key]) => {
@@ -362,20 +390,238 @@ export default function TeamPOSView({
 
   const todayNetProfit = todaySalesTotal - todayExpensesTotal;
 
+  // Active Drawer Session Calculations
+  const activeSession = state.activeDrawerSession;
+  let drawerCashSalesTotal = 0;
+  let drawerCashSalesCount = 0;
+  let drawerOnlineSalesTotal = 0;
+  let drawerOnlineSalesCount = 0;
+  let drawerCashExpensesTotal = 0;
+  let drawerCashExpensesCount = 0;
+  let drawerCashInTotal = 0;
+  let drawerCashOutTotal = 0;
+  let expectedDrawerCash = 0;
+
+  if (activeSession) {
+    const openTs = Number(activeSession.openedAt || 0);
+
+    salesList.forEach(s => {
+      if (Number(s.ts) >= openTs) {
+        const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
+        const { realPaid } = getSaleTotals(s);
+        if (pm === 'Cash') {
+          drawerCashSalesTotal += realPaid;
+          drawerCashSalesCount++;
+        } else {
+          drawerOnlineSalesTotal += realPaid;
+          drawerOnlineSalesCount++;
+        }
+      }
+    });
+
+    expensesList.forEach(e => {
+      if (Number(e.ts) >= openTs) {
+        drawerCashExpensesTotal += Number(e.amount || 0);
+        drawerCashExpensesCount++;
+      }
+    });
+
+    (activeSession.adjustments || []).forEach(a => {
+      if (a.type === 'in') drawerCashInTotal += Number(a.amount || 0);
+      if (a.type === 'out') drawerCashOutTotal += Number(a.amount || 0);
+    });
+
+    expectedDrawerCash = Number(activeSession.openingFloat || 0) + drawerCashSalesTotal + drawerCashInTotal - drawerCashExpensesTotal - drawerCashOutTotal;
+  }
+
+  const countedDrawerCash = (Number(notes5000 || 0) * 5000)
+    + (Number(notes1000 || 0) * 1000)
+    + (Number(notes500 || 0) * 500)
+    + (Number(notes100 || 0) * 100)
+    + (Number(notes50 || 0) * 50)
+    + (Number(notes20 || 0) * 20)
+    + (Number(notes10 || 0) * 10)
+    + Number(coins || 0);
+
+  const drawerVariance = countedDrawerCash - expectedDrawerCash;
+
+  const handlePerformOpenDrawer = (e) => {
+    e.preventDefault();
+    const flt = Number(openFloat);
+    if (isNaN(flt) || flt < 0) {
+      alert("Please enter a valid starting float amount (e.g. 5000).");
+      return;
+    }
+    onOpenDrawer(flt, openStaff, openNote);
+    setShowDrawerModal(false);
+  };
+
+  const handlePerformAdjustment = (e) => {
+    e.preventDefault();
+    const amt = Number(adjAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert("Please enter a valid adjustment amount.");
+      return;
+    }
+    if (!adjReason.trim()) {
+      alert("Please enter a reason for this drawer adjustment.");
+      return;
+    }
+    onDrawerAdjustment(adjType, amt, adjReason, adjStaff);
+    setAdjAmount('');
+    setAdjReason('');
+    setShowAdjModal(false);
+  };
+
+  const handlePerformCloseShift = () => {
+    if (!activeSession) return;
+
+    const totalNotesCount = Number(notes5000 || 0)
+      + Number(notes1000 || 0)
+      + Number(notes500 || 0)
+      + Number(notes100 || 0)
+      + Number(notes50 || 0)
+      + Number(notes20 || 0)
+      + Number(notes10 || 0)
+      + (Number(coins || 0) > 0 ? 1 : 0);
+
+    if (totalNotesCount === 0 || countedDrawerCash <= 0) {
+      alert(
+        "⚠️ End of Day Cash Count Required!\n\n" +
+        "You must count and enter the currency notes in the cash drawer (how many Rs 5000, 1000, 500, 100, 50, 20, 10 notes and coins) before closing the shift."
+      );
+      return;
+    }
+
+    const noteBreakdownLines = [
+      Number(notes5000) > 0 ? `• Rs 5,000 Notes: ${notes5000} note(s) = ${money(Number(notes5000)*5000)}` : null,
+      Number(notes1000) > 0 ? `• Rs 1,000 Notes: ${notes1000} note(s) = ${money(Number(notes1000)*1000)}` : null,
+      Number(notes500) > 0 ? `• Rs 500 Notes: ${notes500} note(s) = ${money(Number(notes500)*500)}` : null,
+      Number(notes100) > 0 ? `• Rs 100 Notes: ${notes100} note(s) = ${money(Number(notes100)*100)}` : null,
+      Number(notes50) > 0 ? `• Rs 50 Notes: ${notes50} note(s) = ${money(Number(notes50)*50)}` : null,
+      Number(notes20) > 0 ? `• Rs 20 Notes: ${notes20} note(s) = ${money(Number(notes20)*20)}` : null,
+      Number(notes10) > 0 ? `• Rs 10 Notes: ${notes10} note(s) = ${money(Number(notes10)*10)}` : null,
+      Number(coins) > 0 ? `• Coins / Change: ${money(Number(coins))}` : null,
+    ].filter(Boolean).join('\n');
+
+    const confirmPrompt =
+      `CONFIRM END-OF-DAY CASH SUBMISSION:\n\n` +
+      `CURRENCY NOTES ENTERED:\n${noteBreakdownLines}\n\n` +
+      `-----------------------------------------\n` +
+      `💰 TOTAL PHYSICAL CASH COUNTED: ${money(countedDrawerCash)}\n` +
+      `-----------------------------------------\n\n` +
+      `Submit this cash count and close your shift?`;
+
+    if (!window.confirm(confirmPrompt)) {
+      return;
+    }
+
+    const sessionData = {
+      id: activeSession.id,
+      openedAt: activeSession.openedAt,
+      openedBy: activeSession.openedBy,
+      openingFloat: Number(activeSession.openingFloat || 0),
+      openingNote: activeSession.openingNote || '',
+      adjustments: activeSession.adjustments || [],
+      closedAt: Date.now(),
+      closedBy: closeStaff || selStaff,
+      cashSalesTotal: drawerCashSalesTotal,
+      cashSalesCount: drawerCashSalesCount,
+      onlineSalesTotal: drawerOnlineSalesTotal,
+      onlineSalesCount: drawerOnlineSalesCount,
+      cashExpensesTotal: drawerCashExpensesTotal,
+      cashExpensesCount: drawerCashExpensesCount,
+      cashInTotal: drawerCashInTotal,
+      cashOutTotal: drawerCashOutTotal,
+      expectedCash: expectedDrawerCash,
+      countedCash: countedDrawerCash,
+      variance: drawerVariance,
+      denominations: {
+        d5000: Number(notes5000 || 0),
+        d1000: Number(notes1000 || 0),
+        d500: Number(notes500 || 0),
+        d100: Number(notes100 || 0),
+        d50: Number(notes50 || 0),
+        d20: Number(notes20 || 0),
+        d10: Number(notes10 || 0),
+        coins: Number(coins || 0)
+      },
+      closingNotes: (closingNotes || '').trim()
+    };
+
+    onCloseDrawer(sessionData);
+    setNotes5000('');
+    setNotes1000('');
+    setNotes500('');
+    setNotes100('');
+    setNotes50('');
+    setNotes20('');
+    setNotes10('');
+    setCoins('');
+    setClosingNotes('');
+    setShowDrawerModal(false);
+    alert(`✅ Cash count of ${money(countedDrawerCash)} submitted successfully! Shift has been closed.`);
+  };
+
   return (
     <div className="team-pos-view">
-      {/* TEAM TABS */}
-      <nav className="tabs" style={{ marginBottom: '20px' }}>
-        <button className={teamTab === 'new' ? 'active' : ''} onClick={() => setTeamTab('new')}>
-          🛒 New Sale Order
-        </button>
-        <button className={teamTab === 'records' ? 'active' : ''} onClick={() => setTeamTab('records')}>
-          📋 Sales Records {pendingSalesCount > 0 && <span className="badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', fontWeight: 800 }}>{pendingSalesCount} Pending</span>}
-        </button>
-        <button className={teamTab === 'expenses' ? 'active' : ''} onClick={() => setTeamTab('expenses')}>
-          💸 Log Daily Expense
-        </button>
-      </nav>
+      {/* TEAM TABS + CASH DRAWER MODAL TRIGGER (STAYS ON CURRENT PAGE) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <nav className="tabs" style={{ margin: 0 }}>
+          <button className={teamTab === 'new' ? 'active' : ''} onClick={() => setTeamTab('new')}>
+            🛒 New Sale Order
+          </button>
+          <button className={teamTab === 'records' ? 'active' : ''} onClick={() => setTeamTab('records')}>
+            📋 Sales Records {pendingSalesCount > 0 && <span className="badge" style={{ background: 'var(--danger-soft)', color: 'var(--danger)', fontWeight: 800 }}>{pendingSalesCount} Pending</span>}
+          </button>
+          <button className={teamTab === 'expenses' ? 'active' : ''} onClick={() => setTeamTab('expenses')}>
+            💸 Log Daily Expense
+          </button>
+        </nav>
+
+        <div>
+          {activeSession ? (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setShowDrawerModal(true)}
+              style={{
+                borderColor: '#10B981',
+                color: '#10B981',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 14px',
+                borderRadius: '10px'
+              }}
+            >
+              <span className="drawer-status-pill open" style={{ margin: 0, padding: '2px 8px', fontSize: '11px' }}>
+                <span className="status-dot"></span> Active Shift
+              </span>
+              <span>💼 Drawer &amp; Closing Count</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setShowDrawerModal(true)}
+              style={{
+                background: '#10B981',
+                borderColor: '#10B981',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                borderRadius: '10px'
+              }}
+            >
+              💼 Open Cash Drawer
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* TAB 1: NEW SALE */}
       {teamTab === 'new' && (
@@ -900,6 +1146,401 @@ export default function TeamPOSView({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CASH DRAWER MODAL (OPENS DIRECTLY ON TOP OF CURRENT SCREEN - NO TAB SWITCHING) */}
+      {showDrawerModal && (
+        <div
+          className="overlay show"
+          onClick={(e) => {
+            if (e.target.className && e.target.className.includes('overlay')) setShowDrawerModal(false);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: activeSession ? '760px' : '520px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '24px'
+            }}
+          >
+            {/* IF DRAWER IS CLOSED: QUICK OPEN SHIFT */}
+            {!activeSession ? (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>💼 Open Counter Cash Drawer</span>
+                  </h3>
+                  <button className="x" onClick={() => setShowDrawerModal(false)}>×</button>
+                </div>
+                <p style={{ color: 'var(--muted)', fontSize: '13.5px', marginTop: 0, marginBottom: '18px' }}>
+                  Enter the starting cash float kept in the register to give change to customers.
+                </p>
+
+                <form onSubmit={handlePerformOpenDrawer}>
+                  <div className="field">
+                    <label>Starting Cash Float ({CUR}) *</label>
+                    <input
+                      className="mono"
+                      type="number"
+                      min="0"
+                      step="50"
+                      placeholder="e.g. 5000"
+                      value={openFloat}
+                      onChange={(e) => setOpenFloat(e.target.value)}
+                      required
+                      style={{ fontSize: '18px', fontWeight: 800 }}
+                      autoFocus
+                    />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      {[0, 2000, 3000, 5000, 10000].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          className="btn ghost sm"
+                          style={{ padding: '4px 8px', fontSize: '12px' }}
+                          onClick={() => setOpenFloat(String(amt))}
+                        >
+                          {amt === 0 ? 'Rs 0' : money(amt)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="field" style={{ marginTop: '14px' }}>
+                    <label>Cashier / Opening Staff *</label>
+                    <select value={openStaff} onChange={(e) => setOpenStaff(e.target.value)}>
+                      {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="field" style={{ marginTop: '14px' }}>
+                    <label>Opening Notes (optional)</label>
+                    <input
+                      placeholder="e.g. Morning opening float verified"
+                      value={openNote}
+                      onChange={(e) => setOpenNote(e.target.value)}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
+                    <button
+                      type="submit"
+                      className="btn primary"
+                      style={{ flex: 1, padding: '12px', background: '#10B981', borderColor: '#10B981', fontWeight: 700 }}
+                    >
+                      🟢 Start Shift &amp; Open Drawer
+                    </button>
+                    <button type="button" className="btn ghost" onClick={() => setShowDrawerModal(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* IF DRAWER IS OPEN: CASH IN/OUT & END OF DAY NOTE COUNT (BLIND DROP - NO DETAILED SALES / VARIANCE SHOWN) */
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span className="drawer-status-pill open" style={{ margin: 0 }}>
+                      <span className="status-dot"></span> Active Shift
+                    </span>
+                    <span style={{ fontWeight: 800, fontSize: '16px' }}>
+                      Cashier: {activeSession.openedBy}
+                    </span>
+                  </div>
+                  <button className="x" onClick={() => setShowDrawerModal(false)}>×</button>
+                </div>
+
+                <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginBottom: '16px' }}>
+                  Opened at {fmtDate(activeSession.openedAt)} · Starting Float: <strong className="mono">{money(activeSession.openingFloat)}</strong>
+                  {activeSession.openingNote && ` · "${activeSession.openingNote}"`}
+                </div>
+
+                {/* QUICK CASH ACTIONS (ADD MONEY / TAKE OUT MONEY) */}
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', padding: '12px 14px', background: 'var(--line-soft)', borderRadius: '12px' }}>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{ flex: 1, background: '#FFFFFF', fontWeight: 700, color: '#059669', borderColor: '#10B981' }}
+                    onClick={() => {
+                      setAdjType('in');
+                      setAdjAmount('');
+                      setAdjReason('');
+                      setShowAdjModal(true);
+                    }}
+                  >
+                    ➕ Add Money (Cash In)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{ flex: 1, background: '#FFFFFF', fontWeight: 700, color: '#DC2626', borderColor: '#DC2626' }}
+                    onClick={() => {
+                      setAdjType('out');
+                      setAdjAmount('');
+                      setAdjReason('');
+                      setShowAdjModal(true);
+                    }}
+                  >
+                    ➖ Take Out Money (Cash Out)
+                  </button>
+                </div>
+
+                {/* END-OF-DAY PHYSICAL CURRENCY NOTE COUNTER */}
+                <div style={{ borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px' }}>
+                      💵 End-of-Day Cash &amp; Note Count
+                    </h4>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ fontSize: '11px', padding: '2px 8px' }}
+                      onClick={() => {
+                        setNotes5000(''); setNotes1000(''); setNotes500(''); setNotes100('');
+                        setNotes50(''); setNotes20(''); setNotes10(''); setCoins('');
+                      }}
+                    >
+                      Clear Counts
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '12.5px', color: 'var(--muted)', margin: '0 0 14px 0' }}>
+                    Count all physical currency notes in the drawer at the end of the shift and enter quantities below:
+                  </p>
+
+                  <div className="denom-grid">
+                    {/* RS 5000 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #D97706' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#D97706', fontWeight: 800 }}>Rs 5,000</div>
+                        <div className="denom-subtotal mono">{money(Number(notes5000 || 0) * 5000)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes5000} onChange={(e) => setNotes5000(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes5000(String((Number(notes5000) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes5000(String((Number(notes5000) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* RS 1000 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #2563EB' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#2563EB', fontWeight: 800 }}>Rs 1,000</div>
+                        <div className="denom-subtotal mono">{money(Number(notes1000 || 0) * 1000)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes1000} onChange={(e) => setNotes1000(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes1000(String((Number(notes1000) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes1000(String((Number(notes1000) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* RS 500 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #059669' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#059669', fontWeight: 800 }}>Rs 500</div>
+                        <div className="denom-subtotal mono">{money(Number(notes500 || 0) * 500)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes500} onChange={(e) => setNotes500(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes500(String((Number(notes500) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes500(String((Number(notes500) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* RS 100 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #DC2626' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#DC2626', fontWeight: 800 }}>Rs 100</div>
+                        <div className="denom-subtotal mono">{money(Number(notes100 || 0) * 100)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes100} onChange={(e) => setNotes100(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes100(String((Number(notes100) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes100(String((Number(notes100) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* RS 50 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #7C3AED' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#7C3AED', fontWeight: 800 }}>Rs 50</div>
+                        <div className="denom-subtotal mono">{money(Number(notes50 || 0) * 50)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes50} onChange={(e) => setNotes50(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes50(String((Number(notes50) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes50(String((Number(notes50) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* RS 20 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #EA580C' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#EA580C', fontWeight: 800 }}>Rs 20</div>
+                        <div className="denom-subtotal mono">{money(Number(notes20 || 0) * 20)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes20} onChange={(e) => setNotes20(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes20(String((Number(notes20) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes20(String((Number(notes20) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* RS 10 */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #0D9488' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ color: '#0D9488', fontWeight: 800 }}>Rs 10</div>
+                        <div className="denom-subtotal mono">{money(Number(notes10 || 0) * 10)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input className="denom-input mono" type="number" min="0" placeholder="0" value={notes10} onChange={(e) => setNotes10(e.target.value)} />
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes10(String((Number(notes10) || 0) + 1))}>+1</button>
+                        <button type="button" className="btn ghost sm" style={{ padding: '4px 6px', fontSize: '11px', fontWeight: 700 }} onClick={() => setNotes10(String((Number(notes10) || 0) + 5))}>+5</button>
+                      </div>
+                    </div>
+
+                    {/* COINS */}
+                    <div className="denom-card" style={{ borderLeft: '4px solid #64748B' }}>
+                      <div className="denom-label">
+                        <div className="denom-title" style={{ fontWeight: 800 }}>Coins / Change</div>
+                        <div className="denom-subtotal mono">{money(Number(coins || 0))}</div>
+                      </div>
+                      <input className="denom-input mono" type="number" min="0" placeholder="0" value={coins} onChange={(e) => setCoins(e.target.value)} />
+                    </div>
+                  </div>
+
+                  {/* TOTAL COUNTED CASH (ONLY PHYSICAL TOTAL - NO SYSTEM EXPECTED OR VARIANCE) */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'baseline',
+                      padding: '14px 16px',
+                      background: 'var(--card)',
+                      border: '2px solid var(--accent)',
+                      borderRadius: '12px',
+                      marginTop: '16px'
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontWeight: 800, fontSize: '15px' }}>Total Physical Cash in Drawer</span>
+                      <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '2px' }}>Sum of counted currency notes &amp; coins</div>
+                    </div>
+                    <span className="mono" style={{ fontSize: '26px', fontWeight: 900, color: 'var(--accent-ink)' }}>
+                      {money(countedDrawerCash)}
+                    </span>
+                  </div>
+
+                  {/* CLOSING CASHIER & NOTES */}
+                  <div className="row r2" style={{ marginTop: '16px' }}>
+                    <div className="field">
+                      <label>Closing Staff Member *</label>
+                      <select value={closeStaff} onChange={(e) => setCloseStaff(e.target.value)}>
+                        {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Closing Notes (optional)</label>
+                      <input
+                        placeholder="e.g. Evening shift hand-over"
+                        value={closingNotes}
+                        onChange={(e) => setClosingNotes(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      style={{ flex: 1, padding: '13px', background: '#0F172A', borderColor: '#0F172A', fontWeight: 800 }}
+                      onClick={handlePerformCloseShift}
+                    >
+                      🔒 Submit Count &amp; Close Shift
+                    </button>
+                    <button type="button" className="btn ghost" onClick={() => setShowDrawerModal(false)}>
+                      Back to POS
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* QUICK CASH ADJUSTMENT MODAL (CASH IN / OUT) */}
+      {showAdjModal && (
+        <div className="overlay show" onClick={(e) => { if (e.target.className && e.target.className.includes('overlay')) setShowAdjModal(false); }}>
+          <div className="card" style={{ maxWidth: '440px', width: '100%', padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>{adjType === 'in' ? '➕ Add Cash to Drawer (Cash In)' : '➖ Take Cash Out (Cash Out / Drop)'}</span>
+              <button className="x" onClick={() => setShowAdjModal(false)}>×</button>
+            </h3>
+            <form onSubmit={handlePerformAdjustment}>
+              <div className="field">
+                <label>Adjustment Type</label>
+                <select value={adjType} onChange={(e) => setAdjType(e.target.value)}>
+                  <option value="in">➕ Cash In (Float increase / Change added)</option>
+                  <option value="out">➖ Cash Out (Safe drop / Owner withdrawal)</option>
+                </select>
+              </div>
+
+              <div className="field" style={{ marginTop: '12px' }}>
+                <label>Amount ({CUR}) *</label>
+                <input
+                  className="mono"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="e.g. 1000"
+                  value={adjAmount}
+                  onChange={(e) => setAdjAmount(e.target.value)}
+                  required
+                  style={{ fontSize: '18px', fontWeight: 700 }}
+                />
+              </div>
+
+              <div className="field" style={{ marginTop: '12px' }}>
+                <label>Reason / Description *</label>
+                <input
+                  placeholder="e.g. Mid-day safe drop, owner added coins"
+                  value={adjReason}
+                  onChange={(e) => setAdjReason(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="field" style={{ marginTop: '12px' }}>
+                <label>Staff</label>
+                <select value={adjStaff} onChange={(e) => setAdjStaff(e.target.value)}>
+                  {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                <button
+                  type="submit"
+                  className="btn primary"
+                  style={{
+                    flex: 1,
+                    background: adjType === 'in' ? '#10B981' : '#DC2626',
+                    borderColor: adjType === 'in' ? '#10B981' : '#DC2626'
+                  }}
+                >
+                  Confirm {adjType === 'in' ? 'Cash In' : 'Cash Out'}
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setShowAdjModal(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

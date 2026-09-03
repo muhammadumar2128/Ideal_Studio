@@ -55,7 +55,9 @@ function getDefaults() {
     oneByOneRo: JSON.parse(JSON.stringify(ro)),
     sets,
     misc,
-    expenses: []
+    expenses: [],
+    activeDrawerSession: null,
+    drawerHistory: []
   };
 }
 
@@ -165,10 +167,16 @@ export default function App() {
             if (salesRes.data && salesRes.data.length > 0) {
               const normalSales = [];
               const expList = [];
+              const drawerList = [];
 
               salesRes.data.forEach(s => {
                 const isExp = s.customer === '__EXPENSE__' || (s.id && String(s.id).startsWith('EXP-'));
-                if (isExp) {
+                const isDrawer = s.customer === '__DRAWER_SESSION__' || (s.id && String(s.id).startsWith('DRAWER-'));
+                if (isDrawer) {
+                  if (s.items && s.items[0]) {
+                    drawerList.push(s.items[0]);
+                  }
+                } else if (isExp) {
                   expList.push({
                     id: s.id,
                     ts: Number(s.ts),
@@ -202,6 +210,10 @@ export default function App() {
               const remoteExpIds = new Set(expList.map(e => e.id));
               const localOnlyExp = (prev.expenses || []).filter(e => !remoteExpIds.has(e.id));
               updated.expenses = [...expList, ...localOnlyExp];
+
+              const remoteDrawerIds = new Set(drawerList.map(d => d.id));
+              const localOnlyDrawers = (prev.drawerHistory || []).filter(d => !remoteDrawerIds.has(d.id));
+              updated.drawerHistory = [...drawerList, ...localOnlyDrawers].sort((a, b) => (b.closedAt || b.openedAt || 0) - (a.closedAt || a.openedAt || 0));
             }
 
             if (settingsRes.data) {
@@ -251,7 +263,14 @@ export default function App() {
         if (payload.eventType === 'INSERT') {
           const row = payload.new;
           const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
-          if (isExp) {
+          const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
+          if (isDrawer) {
+            const drawerData = (row.items && row.items[0]) || row;
+            setState(prev => {
+              if (prev.drawerHistory && prev.drawerHistory.some(d => d.id === drawerData.id)) return prev;
+              return { ...prev, drawerHistory: [drawerData, ...(prev.drawerHistory || [])] };
+            });
+          } else if (isExp) {
             const formattedExp = {
               id: row.id,
               ts: Number(row.ts),
@@ -286,7 +305,14 @@ export default function App() {
         } else if (payload.eventType === 'UPDATE') {
           const row = payload.new;
           const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
-          if (isExp) {
+          const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
+          if (isDrawer) {
+            const drawerData = (row.items && row.items[0]) || row;
+            setState(prev => ({
+              ...prev,
+              drawerHistory: (prev.drawerHistory || []).map(d => d.id === row.id ? drawerData : d)
+            }));
+          } else if (isExp) {
             const formattedExp = {
               id: row.id,
               ts: Number(row.ts),
@@ -322,7 +348,8 @@ export default function App() {
             setState(prev => ({
               ...prev,
               sales: prev.sales.filter(s => s.id !== oldId),
-              expenses: (prev.expenses || []).filter(e => e.id !== oldId)
+              expenses: (prev.expenses || []).filter(e => e.id !== oldId),
+              drawerHistory: (prev.drawerHistory || []).filter(d => d.id !== oldId)
             }));
           }
         }
@@ -572,6 +599,86 @@ export default function App() {
     }
   };
 
+  // Cash Drawer & Shift Handlers
+  const handleOpenDrawer = (openingFloat, staff, note) => {
+    const newSession = {
+      id: "DRAWER-" + Date.now(),
+      openedAt: Date.now(),
+      openedBy: staff || state.lastStaff || "Umar",
+      openingFloat: Number(openingFloat) || 0,
+      openingNote: (note || "").trim(),
+      adjustments: []
+    };
+    setState(prev => ({
+      ...prev,
+      activeDrawerSession: newSession
+    }));
+  };
+
+  const handleDrawerAdjustment = (type, amount, reason, staff) => {
+    if (!state.activeDrawerSession) return;
+    const adj = {
+      id: "ADJ-" + Date.now(),
+      ts: Date.now(),
+      type, // 'in' (Cash In / Added) or 'out' (Cash Out / Drop)
+      amount: Math.abs(Number(amount) || 0),
+      reason: (reason || "").trim(),
+      staff: staff || state.lastStaff || "Umar"
+    };
+    setState(prev => ({
+      ...prev,
+      activeDrawerSession: {
+        ...prev.activeDrawerSession,
+        adjustments: [...(prev.activeDrawerSession.adjustments || []), adj]
+      }
+    }));
+  };
+
+  const handleCloseDrawer = async (sessionData) => {
+    const nextHistory = [sessionData, ...(state.drawerHistory || [])];
+    const nextState = {
+      ...state,
+      activeDrawerSession: null,
+      drawerHistory: nextHistory
+    };
+    setState(nextState);
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').insert([{
+          id: sessionData.id,
+          ts: sessionData.closedAt,
+          staff: sessionData.closedBy,
+          customer: '__DRAWER_SESSION__',
+          phone: sessionData.variance === 0 ? 'Balanced' : (sessionData.variance > 0 ? `Over +${sessionData.variance}` : `Short ${sessionData.variance}`),
+          items: [sessionData],
+          total: sessionData.countedCash,
+          paid: sessionData.expectedCash,
+          balance: sessionData.variance
+        }]);
+      } catch (err) {
+        console.error('Error syncing drawer session to Supabase:', err);
+      }
+    }
+  };
+
+  const handleDeleteDrawerHistory = async (sessionId) => {
+    if (!window.confirm("Permanently delete this shift drawer record?")) return;
+    const nextHistory = (state.drawerHistory || []).filter(d => d.id !== sessionId);
+    setState(prev => ({
+      ...prev,
+      drawerHistory: nextHistory
+    }));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').delete().eq('id', sessionId);
+      } catch (err) {
+        console.error('Error deleting drawer session in Supabase:', err);
+      }
+    }
+  };
+
   // Export & Backup handlers
   const downloadFile = (fileName, content, type) => {
     const blob = new Blob([content], { type });
@@ -769,6 +876,9 @@ export default function App() {
           setActiveModalSale={setActiveModalSale}
           onOpenAdminLogin={() => setShowLoginModal(true)}
           isAdminLoggedIn={!!adminUser}
+          onOpenDrawer={handleOpenDrawer}
+          onDrawerAdjustment={handleDrawerAdjustment}
+          onCloseDrawer={handleCloseDrawer}
         />
       ) : (
         <AdminDashboard
@@ -785,6 +895,10 @@ export default function App() {
           onExportCsv={handleExportCsv}
           onImportJson={handleImportJson}
           setActiveModalSale={setActiveModalSale}
+          onOpenDrawer={handleOpenDrawer}
+          onDrawerAdjustment={handleDrawerAdjustment}
+          onCloseDrawer={handleCloseDrawer}
+          onDeleteDrawerHistory={handleDeleteDrawerHistory}
         />
       )}
 

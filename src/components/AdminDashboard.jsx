@@ -94,13 +94,22 @@ export default function AdminDashboard({
   onExportJson,
   onExportCsv,
   onImportJson,
-  setActiveModalSale
+  setActiveModalSale,
+  onOpenDrawer,
+  onDrawerAdjustment,
+  onCloseDrawer,
+  onDeleteDrawerHistory
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
   const now = new Date();
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
+
+  // Cash Drawer Shift Audit States
+  const [selectedShiftSlip, setSelectedShiftSlip] = useState(null);
+  const [filterDrawerStaff, setFilterDrawerStaff] = useState('');
+  const [filterDrawerStatus, setFilterDrawerStatus] = useState('');
 
   // Form states for new items, sets, staff, and expenses
   const [newSetName, setNewSetName] = useState('');
@@ -512,6 +521,9 @@ export default function AdminDashboard({
         <button className={adminTab === 'analytics' ? 'active' : ''} onClick={() => setAdminTab('analytics')}>📈 Analytics &amp; Graphs</button>
         <button className={adminTab === 'expenses' ? 'active' : ''} onClick={() => setAdminTab('expenses')}>💸 Daily Expenses &amp; Net Profit</button>
         <button className={adminTab === 'audit' ? 'active' : ''} onClick={() => setAdminTab('audit')}>📋 Sales Audit ({totalSalesCount})</button>
+        <button className={adminTab === 'drawer' ? 'active' : ''} onClick={() => setAdminTab('drawer')}>
+          💼 Cash Drawer &amp; Shifts {state.activeDrawerSession ? <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', fontWeight: 800 }}>🟢 Open</span> : ''}
+        </button>
         <button className={adminTab === 'prices' ? 'active' : ''} onClick={() => setAdminTab('prices')}>🏷️ Rate List &amp; Custom Services</button>
         <button className={adminTab === 'team' ? 'active' : ''} onClick={() => setAdminTab('team')}>👥 Team &amp; Staff</button>
         <button className={adminTab === 'system' ? 'active' : ''} onClick={() => setAdminTab('system')}>⚙️ System &amp; Backup</button>
@@ -1620,6 +1632,424 @@ export default function AdminDashboard({
               </p>
               <button className="btn danger block" onClick={onWipeAll}>
                 Delete All Sales Records
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* TAB 7: CASH DRAWER & SHIFT AUDITS */}
+      {adminTab === 'drawer' && (() => {
+        const activeDrawer = state.activeDrawerSession;
+        let activeCashSalesTotal = 0;
+        let activeCashSalesCount = 0;
+        let activeOnlineSalesTotal = 0;
+        let activeCashExpensesTotal = 0;
+        let activeCashInTotal = 0;
+        let activeCashOutTotal = 0;
+        let activeExpectedCash = 0;
+
+        if (activeDrawer) {
+          const openTs = Number(activeDrawer.openedAt || 0);
+          salesList.forEach(s => {
+            if (Number(s.ts) >= openTs) {
+              const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
+              const { realPaid } = getSaleTotals(s);
+              if (pm === 'Cash') {
+                activeCashSalesTotal += realPaid;
+                activeCashSalesCount++;
+              } else {
+                activeOnlineSalesTotal += realPaid;
+              }
+            }
+          });
+
+          expensesList.forEach(e => {
+            if (Number(e.ts) >= openTs) {
+              activeCashExpensesTotal += Number(e.amount || 0);
+            }
+          });
+
+          (activeDrawer.adjustments || []).forEach(a => {
+            if (a.type === 'in') activeCashInTotal += Number(a.amount || 0);
+            if (a.type === 'out') activeCashOutTotal += Number(a.amount || 0);
+          });
+
+          activeExpectedCash = Number(activeDrawer.openingFloat || 0) + activeCashSalesTotal + activeCashInTotal - activeCashExpensesTotal - activeCashOutTotal;
+        }
+
+        const drawerHistory = state.drawerHistory || [];
+        const filteredDrawerHistory = drawerHistory.filter(d => {
+          if (filterDrawerStaff && (d.closedBy !== filterDrawerStaff && d.openedBy !== filterDrawerStaff)) return false;
+          if (filterDrawerStatus === 'balanced' && d.variance !== 0) return false;
+          if (filterDrawerStatus === 'short' && d.variance >= 0) return false;
+          if (filterDrawerStatus === 'over' && d.variance <= 0) return false;
+          return true;
+        });
+
+        const totalShiftsCount = drawerHistory.length;
+        const balancedShiftsCount = drawerHistory.filter(d => d.variance === 0).length;
+        const shortShiftsCount = drawerHistory.filter(d => d.variance < 0).length;
+        const overShiftsCount = drawerHistory.filter(d => d.variance > 0).length;
+        const netVarianceTotal = drawerHistory.reduce((sum, d) => sum + Number(d.variance || 0), 0);
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            {/* LIVE REGISTER STATUS CARD */}
+            <div
+              className="card"
+              style={{
+                padding: '20px 24px',
+                borderLeft: `5px solid ${activeDrawer ? '#10B981' : 'var(--muted)'}`
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span className={`drawer-status-pill ${activeDrawer ? 'open' : 'closed'}`}>
+                      <span className="status-dot"></span>
+                      {activeDrawer ? 'Counter Register: Active Shift' : 'Counter Register: Closed'}
+                    </span>
+                    {activeDrawer && (
+                      <span style={{ fontWeight: 800, fontSize: '15px' }}>
+                        Cashier: {activeDrawer.openedBy}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '6px' }}>
+                    {activeDrawer ? (
+                      <>
+                        Opened {fmtDate(activeDrawer.openedAt)} · Starting Float: <strong className="mono">{money(activeDrawer.openingFloat)}</strong>
+                        {activeDrawer.openingNote && ` · Note: "${activeDrawer.openingNote}"`}
+                      </>
+                    ) : (
+                      'No active shift in the counter cash drawer right now. Staff can open a shift from Counter POS view.'
+                    )}
+                  </div>
+                </div>
+
+                {activeDrawer && (
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>
+                        Expected Physical Cash
+                      </div>
+                      <div className="mono" style={{ fontSize: '22px', fontWeight: 800, color: '#10B981' }}>
+                        {money(activeExpectedCash)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {activeDrawer && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                    gap: '12px',
+                    marginTop: '16px',
+                    paddingTop: '16px',
+                    borderTop: '1px solid var(--line-soft)'
+                  }}
+                >
+                  <div style={{ fontSize: '13px' }}>
+                    <span style={{ color: 'var(--muted)' }}>Cash Sales: </span>
+                    <strong className="mono" style={{ color: '#10B981' }}>+ {money(activeCashSalesTotal)}</strong> ({activeCashSalesCount})
+                  </div>
+                  <div style={{ fontSize: '13px' }}>
+                    <span style={{ color: 'var(--muted)' }}>Online Sales: </span>
+                    <strong className="mono" style={{ color: '#7C3AED' }}>{money(activeOnlineSalesTotal)}</strong>
+                  </div>
+                  <div style={{ fontSize: '13px' }}>
+                    <span style={{ color: 'var(--muted)' }}>Cash Expenses: </span>
+                    <strong className="mono" style={{ color: '#DC2626' }}>- {money(activeCashExpensesTotal)}</strong>
+                  </div>
+                  <div style={{ fontSize: '13px' }}>
+                    <span style={{ color: 'var(--muted)' }}>Cash In / Out: </span>
+                    <strong className="mono">+{money(activeCashInTotal)} / -{money(activeCashOutTotal)}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* AUDIT SUMMARY STATS */}
+            <div className="drawer-kpis">
+              <div className="drawer-kpi-card" style={{ borderLeft: '4px solid #0284C7' }}>
+                <div className="drawer-kpi-label">Closed Shifts Logged</div>
+                <div className="drawer-kpi-val mono">{totalShiftsCount}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Historical shifts audited</div>
+              </div>
+
+              <div className="drawer-kpi-card" style={{ borderLeft: '4px solid #10B981' }}>
+                <div className="drawer-kpi-label">Balanced Shifts</div>
+                <div className="drawer-kpi-val mono" style={{ color: '#10B981' }}>{balancedShiftsCount}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>100% matched physical cash</div>
+              </div>
+
+              <div className="drawer-kpi-card" style={{ borderLeft: '4px solid #DC2626' }}>
+                <div className="drawer-kpi-label">Cash Shortages / Over</div>
+                <div className="drawer-kpi-val mono" style={{ color: shortShiftsCount > 0 ? '#DC2626' : 'var(--ink)' }}>
+                  {shortShiftsCount} short · {overShiftsCount} over
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Discrepancy incidents</div>
+              </div>
+
+              <div className="drawer-kpi-card" style={{ borderLeft: `4px solid ${netVarianceTotal >= 0 ? '#10B981' : '#DC2626'}` }}>
+                <div className="drawer-kpi-label">Net Shift Variance</div>
+                <div className="drawer-kpi-val mono" style={{ color: netVarianceTotal >= 0 ? '#10B981' : '#DC2626' }}>
+                  {netVarianceTotal === 0 ? 'Rs 0' : (netVarianceTotal > 0 ? `+ ${money(netVarianceTotal)}` : money(netVarianceTotal))}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Cumulative difference</div>
+              </div>
+            </div>
+
+            {/* SHIFTS AUDIT LOG CARD */}
+            <div className="card">
+              <h2>
+                <span>📜 Shift Closings &amp; Cash Reconciliation History</span>
+                <span className="badge">{filteredDrawerHistory.length} record(s)</span>
+              </h2>
+              <div className="body">
+                {/* FILTERS */}
+                <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '18px' }}>
+                  <div style={{ flex: 1, minWidth: '180px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)' }}>Filter by Staff Member</label>
+                    <select value={filterDrawerStaff} onChange={(e) => setFilterDrawerStaff(e.target.value)} style={{ marginTop: '4px' }}>
+                      <option value="">All Staff Members</option>
+                      {state.staff.map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: '180px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)' }}>Filter by Reconciliation Status</label>
+                    <select value={filterDrawerStatus} onChange={(e) => setFilterDrawerStatus(e.target.value)} style={{ marginTop: '4px' }}>
+                      <option value="">All Shifts</option>
+                      <option value="balanced">🟢 Balanced Only (Match)</option>
+                      <option value="short">🔴 Cash Shortages Only (-)</option>
+                      <option value="over">🟡 Cash Overages Only (+)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {!filteredDrawerHistory.length ? (
+                  <div className="cart-empty" style={{ padding: '30px 0' }}>
+                    No drawer shift records found matching your filter criteria.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Shift Timing</th>
+                          <th>Cashier(s)</th>
+                          <th className="num">Starting Float</th>
+                          <th className="num">Cash Sales</th>
+                          <th className="num">Expenses &amp; Drops</th>
+                          <th className="num">Expected Cash</th>
+                          <th className="num">Counted Cash</th>
+                          <th>Reconciliation</th>
+                          <th>Denominations</th>
+                          <th className="num">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredDrawerHistory.map(d => {
+                          const isBalanced = d.variance === 0;
+                          const isOver = d.variance > 0;
+                          const denoms = d.denominations || {};
+                          const denomList = [
+                            denoms.d5000 > 0 ? `5000×${denoms.d5000}` : null,
+                            denoms.d1000 > 0 ? `1000×${denoms.d1000}` : null,
+                            denoms.d500 > 0 ? `500×${denoms.d500}` : null,
+                            denoms.d100 > 0 ? `100×${denoms.d100}` : null,
+                            denoms.d50 > 0 ? `50×${denoms.d50}` : null,
+                            denoms.d20 > 0 ? `20×${denoms.d20}` : null,
+                            denoms.d10 > 0 ? `10×${denoms.d10}` : null,
+                            denoms.coins > 0 ? `Coins: ${money(denoms.coins)}` : null
+                          ].filter(Boolean).join(', ');
+
+                          return (
+                            <tr key={d.id}>
+                              <td style={{ fontSize: '12px' }}>
+                                <strong style={{ color: 'var(--ink)' }}>{fmtDate(d.closedAt || d.ts)}</strong>
+                                {d.openedAt && (
+                                  <div style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '2px' }}>
+                                    Opened: {new Date(d.openedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ fontWeight: 600 }}>
+                                <div>{d.closedBy || d.staff || '—'}</div>
+                                {d.openedBy && d.openedBy !== d.closedBy && (
+                                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Opened by {d.openedBy}</div>
+                                )}
+                              </td>
+                              <td className="num mono">{money(d.openingFloat)}</td>
+                              <td className="num mono" style={{ color: '#059669', fontWeight: 700 }}>
+                                + {money(d.cashSalesTotal)}
+                                <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{d.cashSalesCount || 0} order(s)</div>
+                              </td>
+                              <td className="num mono" style={{ color: '#DC2626' }}>
+                                - {money((Number(d.cashExpensesTotal) || 0) + (Number(d.cashOutTotal) || 0))}
+                              </td>
+                              <td className="num mono" style={{ fontWeight: 700 }}>
+                                {money(d.expectedCash)}
+                              </td>
+                              <td className="num mono" style={{ fontWeight: 800, fontSize: '15px' }}>
+                                {money(d.countedCash)}
+                              </td>
+                              <td>
+                                {isBalanced ? (
+                                  <span style={{ color: '#10B981', fontWeight: 800 }}>🟢 Balanced</span>
+                                ) : isOver ? (
+                                  <span style={{ color: '#D97706', fontWeight: 800 }}>🟡 Over +{money(d.variance)}</span>
+                                ) : (
+                                  <span style={{ color: '#DC2626', fontWeight: 800 }}>🔴 Short -{money(Math.abs(d.variance))}</span>
+                                )}
+                                {d.closingNotes && (
+                                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.closingNotes}>
+                                    "{d.closingNotes}"
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ fontSize: '11.5px', color: 'var(--muted)', maxWidth: '160px' }}>
+                                {denomList || '—'}
+                              </td>
+                              <td className="num">
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                  <button
+                                    className="btn ghost sm"
+                                    style={{ padding: '4px 8px', fontSize: '12px' }}
+                                    title="Reprint Shift Slip"
+                                    onClick={() => setSelectedShiftSlip(d)}
+                                  >
+                                    🧾 Slip
+                                  </button>
+                                  {onDeleteDrawerHistory && (
+                                    <button
+                                      className="btn danger sm"
+                                      style={{ padding: '4px 6px', fontSize: '12px' }}
+                                      title="Delete Record"
+                                      onClick={() => onDeleteDrawerHistory(d.id)}
+                                    >
+                                      🗑️
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ADMIN REPRINT THERMAL SHIFT CLOSING SLIP MODAL */}
+      {selectedShiftSlip && (
+        <div
+          className="overlay show"
+          onClick={(e) => {
+            if (e.target.className && e.target.className.includes('overlay')) {
+              setSelectedShiftSlip(null);
+            }
+          }}
+        >
+          <div>
+            <div id="receipt">
+              <div className="rc-in">
+                <div className="rc-c rc-name">{state.studio}</div>
+                <div className="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
+                <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5006990</div>
+                <div className="rc-c rc-small" style={{ fontWeight: 900, textTransform: 'uppercase', marginTop: '4px' }}>
+                  *** SHIFT CLOSING Z-REPORT ***
+                </div>
+                <div className="rc-sep"></div>
+
+                <div className="rc-row"><span>Shift ID</span><span>{selectedShiftSlip.id}</span></div>
+                <div className="rc-row"><span>Opened</span><span>{fmtDate(selectedShiftSlip.openedAt)}</span></div>
+                <div className="rc-row"><span>Closed</span><span>{fmtDate(selectedShiftSlip.closedAt)}</span></div>
+                <div className="rc-row"><span>Opened By</span><span>{selectedShiftSlip.openedBy || '—'}</span></div>
+                <div className="rc-row"><span>Closed By</span><span>{selectedShiftSlip.closedBy || '—'}</span></div>
+
+                <div className="rc-sep"></div>
+                <div className="rc-row"><span>Opening Float</span><span>{money(selectedShiftSlip.openingFloat)}</span></div>
+                <div className="rc-row"><span>Cash Sales ({selectedShiftSlip.cashSalesCount || 0})</span><span>+ {money(selectedShiftSlip.cashSalesTotal)}</span></div>
+                {Number(selectedShiftSlip.onlineSalesTotal || 0) > 0 && (
+                  <div className="rc-row"><span>Online Sales ({selectedShiftSlip.onlineSalesCount || 0})</span><span>{money(selectedShiftSlip.onlineSalesTotal)} (card/app)</span></div>
+                )}
+                {Number(selectedShiftSlip.cashExpensesTotal || 0) > 0 && (
+                  <div className="rc-row"><span>Cash Expenses ({selectedShiftSlip.cashExpensesCount || 0})</span><span>- {money(selectedShiftSlip.cashExpensesTotal)}</span></div>
+                )}
+                {Number(selectedShiftSlip.cashInTotal || 0) > 0 && (
+                  <div className="rc-row"><span>Cash In Drops</span><span>+ {money(selectedShiftSlip.cashInTotal)}</span></div>
+                )}
+                {Number(selectedShiftSlip.cashOutTotal || 0) > 0 && (
+                  <div className="rc-row"><span>Cash Out Drops</span><span>- {money(selectedShiftSlip.cashOutTotal)}</span></div>
+                )}
+
+                <div className="rc-sep"></div>
+                <div className="rc-row" style={{ fontWeight: 800 }}>
+                  <span>EXPECTED CASH</span>
+                  <span>{money(selectedShiftSlip.expectedCash)}</span>
+                </div>
+                <div className="rc-row" style={{ fontWeight: 900, fontSize: '14px' }}>
+                  <span>COUNTED CASH</span>
+                  <span>{money(selectedShiftSlip.countedCash)}</span>
+                </div>
+                <div className="rc-row" style={{ fontWeight: 900 }}>
+                  <span>VARIANCE</span>
+                  <span>
+                    {selectedShiftSlip.variance === 0
+                      ? 'MATCH / 0.00'
+                      : selectedShiftSlip.variance > 0
+                      ? `OVER +${money(selectedShiftSlip.variance)}`
+                      : `SHORT -${money(Math.abs(selectedShiftSlip.variance))}`}
+                  </span>
+                </div>
+
+                {selectedShiftSlip.denominations && (
+                  <>
+                    <div className="rc-sep"></div>
+                    <div className="rc-c rc-small" style={{ fontWeight: 800 }}>CURRENCY BREAKDOWN</div>
+                    {selectedShiftSlip.denominations.d5000 > 0 && <div className="rc-row"><span>Rs 5,000 × {selectedShiftSlip.denominations.d5000}</span><span>{money(selectedShiftSlip.denominations.d5000 * 5000)}</span></div>}
+                    {selectedShiftSlip.denominations.d1000 > 0 && <div className="rc-row"><span>Rs 1,000 × {selectedShiftSlip.denominations.d1000}</span><span>{money(selectedShiftSlip.denominations.d1000 * 1000)}</span></div>}
+                    {selectedShiftSlip.denominations.d500 > 0 && <div className="rc-row"><span>Rs 500 × {selectedShiftSlip.denominations.d500}</span><span>{money(selectedShiftSlip.denominations.d500 * 500)}</span></div>}
+                    {selectedShiftSlip.denominations.d100 > 0 && <div className="rc-row"><span>Rs 100 × {selectedShiftSlip.denominations.d100}</span><span>{money(selectedShiftSlip.denominations.d100 * 100)}</span></div>}
+                    {selectedShiftSlip.denominations.d50 > 0 && <div className="rc-row"><span>Rs 50 × {selectedShiftSlip.denominations.d50}</span><span>{money(selectedShiftSlip.denominations.d50 * 50)}</span></div>}
+                    {selectedShiftSlip.denominations.d20 > 0 && <div className="rc-row"><span>Rs 20 × {selectedShiftSlip.denominations.d20}</span><span>{money(selectedShiftSlip.denominations.d20 * 20)}</span></div>}
+                    {selectedShiftSlip.denominations.d10 > 0 && <div className="rc-row"><span>Rs 10 × {selectedShiftSlip.denominations.d10}</span><span>{money(selectedShiftSlip.denominations.d10 * 10)}</span></div>}
+                    {selectedShiftSlip.denominations.coins > 0 && <div className="rc-row"><span>Coins</span><span>{money(selectedShiftSlip.denominations.coins)}</span></div>}
+                  </>
+                )}
+
+                {selectedShiftSlip.closingNotes && (
+                  <>
+                    <div className="rc-sep"></div>
+                    <div className="rc-small"><strong>Note:</strong> {selectedShiftSlip.closingNotes}</div>
+                  </>
+                )}
+
+                <div className="rc-sep"></div>
+                <div className="rc-foot" style={{ marginTop: '10px' }}>
+                  Cashier Sign: __________________<br />
+                  Manager Sign: __________________<br />
+                  Powered By Lunar Ai
+                </div>
+              </div>
+            </div>
+
+            <div className="rc-actions">
+              <button className="btn primary" style={{ flex: 1 }} onClick={() => window.print()}>
+                🖨️ Print Shift Slip
+              </button>
+              <button className="btn ghost" style={{ flex: 1 }} onClick={() => setSelectedShiftSlip(null)}>
+                Close
               </button>
             </div>
           </div>
