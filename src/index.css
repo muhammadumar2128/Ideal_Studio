@@ -635,6 +635,44 @@ tbody tr.click:hover {
   gap: 8px;
   padding: 0 16px 16px;
   max-width: 300px;
+  flex-wrap: wrap;
+}
+
+/* Void / Wrong Entry Styles */
+tbody tr.row-void {
+  opacity: 0.6;
+  background: rgba(239, 68, 68, 0.04);
+}
+
+tbody tr.row-void:hover {
+  opacity: 0.85;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.strikethrough {
+  text-decoration: line-through !important;
+  color: var(--muted) !important;
+}
+
+.badge-void {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #DC2626 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em;
+}
+
+.rc-void-watermark {
+  background: #FEE2E2;
+  border: 1.5px dashed #DC2626;
+  color: #991B1B;
+  padding: 6px 10px;
+  text-align: center;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
 }
 
 /* =========================================================

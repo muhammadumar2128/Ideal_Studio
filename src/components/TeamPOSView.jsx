@@ -52,6 +52,7 @@ export default function TeamPOSView({
   state,
   onSaveSale,
   onMarkPaid,
+  onToggleVoidSale,
   onAddExpense,
   onDeleteExpense,
   setActiveModalSale,
@@ -63,6 +64,7 @@ export default function TeamPOSView({
 }) {
   const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses', 'drawer'
   const [cart, setCart] = useState([]);
+  const [isSubmittingSale, setIsSubmittingSale] = useState(false);
 
   // Compute dynamic PP count list from state
   const PP = Array.from(new Set([
@@ -291,46 +293,51 @@ export default function TeamPOSView({
 
   // Save sale & show receipt
   const handleSave = () => {
-    if (!cart.length) return;
+    if (isSubmittingSale || !cart.length) return;
+    setIsSubmittingSale(true);
 
-    let finalCart = [...cart];
-    if (photoBundleDiscount > 0) {
-      finalCart.push({
-        label: `🎁 Multi-Photo Combined Offer (${totalPhotos} pics)`,
-        cat: 'Discount',
-        price: -photoBundleDiscount,
-        qty: 1
+    try {
+      let finalCart = [...cart];
+      if (photoBundleDiscount > 0) {
+        finalCart.push({
+          label: `🎁 Multi-Photo Combined Offer (${totalPhotos} pics)`,
+          cat: 'Discount',
+          price: -photoBundleDiscount,
+          qty: 1
+        });
+      }
+
+      if (manualDiscountAmount > 0) {
+        const discLabel = discountType === 'percent'
+          ? `🏷️ Customer Discount (${discountVal}%)`
+          : `🏷️ Customer Discount`;
+        finalCart.push({
+          label: discLabel,
+          cat: 'Discount',
+          price: -manualDiscountAmount,
+          qty: 1
+        });
+      }
+
+      onSaveSale({
+        cart: finalCart,
+        selStaff,
+        fCust,
+        fPhone,
+        cartTotal,
+        paidVal,
+        cartBalance,
+        payMethod
       });
+      setCart([]);
+      setFCust('');
+      setFPhone('');
+      setFPaid('');
+      setPayMethod('Cash');
+      setDiscountVal('');
+    } finally {
+      setTimeout(() => setIsSubmittingSale(false), 500);
     }
-
-    if (manualDiscountAmount > 0) {
-      const discLabel = discountType === 'percent'
-        ? `🏷️ Customer Discount (${discountVal}%)`
-        : `🏷️ Customer Discount`;
-      finalCart.push({
-        label: discLabel,
-        cat: 'Discount',
-        price: -manualDiscountAmount,
-        qty: 1
-      });
-    }
-
-    onSaveSale({
-      cart: finalCart,
-      selStaff,
-      fCust,
-      fPhone,
-      cartTotal,
-      paidVal,
-      cartBalance,
-      payMethod
-    });
-    setCart([]);
-    setFCust('');
-    setFPhone('');
-    setFPaid('');
-    setPayMethod('Cash');
-    setDiscountVal('');
   };
 
   // Submit expense from team
@@ -368,25 +375,42 @@ export default function TeamPOSView({
     return d >= threeDaysAgo;
   });
 
+  // Detect if a sale is likely an accidental double entry (same amount/customer within 15 min)
+  const hasRecentMatchingSale = (sale) => {
+    if (sale.isVoid) return false;
+    return recentSalesList.some(other =>
+      other.id !== sale.id &&
+      !other.isVoid &&
+      Math.abs(Number(other.ts) - Number(sale.ts)) <= 15 * 60 * 1000 &&
+      Number(other.total) === Number(sale.total) &&
+      ((other.customer && other.customer.toLowerCase() === (sale.customer || '').toLowerCase()) ||
+       (other.phone && other.phone === sale.phone) ||
+       (!sale.customer && !other.customer))
+    );
+  };
+
   const filteredSales = recentSalesList.filter(s => {
     const d = new Date(s.ts);
     if (filterStaff && s.staff !== filterStaff) return false;
     const { realBalance } = getSaleTotals(s);
-    if (filterStatus === "balance" && realBalance <= 0) return false;
-    if (filterStatus === "paid" && realBalance > 0) return false;
+    if (filterStatus === "active" && s.isVoid) return false;
+    if (filterStatus === "void" && !s.isVoid) return false;
+    if (filterStatus === "balance" && (s.isVoid || realBalance <= 0)) return false;
+    if (filterStatus === "paid" && (s.isVoid || realBalance > 0)) return false;
     const q = searchBox.toLowerCase().trim();
     if (q && s.id.toLowerCase().indexOf(q) < 0 && (s.customer || "").toLowerCase().indexOf(q) < 0) return false;
     return true;
   });
 
   const pendingSalesCount = recentSalesList.filter(s => {
+    if (s.isVoid) return false;
     const { realBalance } = getSaleTotals(s);
     return realBalance > 0;
   }).length;
 
-  // Today totals
+  // Today totals (excludes voided/duplicate sales)
   const todaySalesTotal = salesList
-    .filter(s => isSameDay(new Date(s.ts), now))
+    .filter(s => !s.isVoid && isSameDay(new Date(s.ts), now))
     .reduce((sum, s) => sum + Number(s.total || 0), 0);
 
   const todayExpensesTotal = expensesList
@@ -411,7 +435,7 @@ export default function TeamPOSView({
     const openTs = Number(activeSession.openedAt || 0);
 
     salesList.forEach(s => {
-      if (Number(s.ts) >= openTs) {
+      if (!s.isVoid && Number(s.ts) >= openTs) {
         const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
         const { realPaid } = getSaleTotals(s);
         if (pm === 'Cash') {
@@ -957,8 +981,10 @@ export default function TeamPOSView({
                 <label>Payment Status</label>
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                   <option value="">All Transactions</option>
+                  <option value="active">Active Sales Only</option>
                   <option value="balance">⚠️ Pending Balance</option>
                   <option value="paid">✅ Fully Paid</option>
+                  <option value="void">🚫 Wrong Entries</option>
                 </select>
               </div>
             </div>
@@ -979,16 +1005,38 @@ export default function TeamPOSView({
                       <th className="num">Discount</th>
                       <th className="num">Paid</th>
                       <th className="num">Balance</th>
-                      <th style={{ textAlign: 'center' }}>Mark Paid Mode</th>
+                      <th style={{ textAlign: 'center' }}>Status / Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredSales.map(s => {
                       const { grossTotal, discAmt, realNetTotal, realPaid, realBalance } = getSaleTotals(s);
                       const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
+                      const isDupWarning = hasRecentMatchingSale(s);
+
                       return (
-                        <tr key={s.id} className="click" onClick={() => setActiveModalSale(s)}>
-                          <td className="mono" style={{ fontWeight: 700 }}>{s.id}</td>
+                        <tr
+                          key={s.id}
+                          className={`click ${s.isVoid ? 'row-void' : ''}`}
+                          onClick={() => setActiveModalSale(s)}
+                        >
+                          <td className="mono" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            <span className={s.isVoid ? 'strikethrough' : ''}>{s.id}</span>
+                            {s.isVoid && (
+                              <span className="badge badge-void" style={{ marginLeft: '6px', fontSize: '9.5px', padding: '1px 5px' }}>
+                                🚫 WRONG
+                              </span>
+                            )}
+                            {!s.isVoid && isDupWarning && (
+                              <span
+                                className="badge"
+                                style={{ marginLeft: '6px', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', fontSize: '10px' }}
+                                title="Identical customer/amount entered within 15 mins (check entry)"
+                              >
+                                ⚠️ Check Entry
+                              </span>
+                            )}
+                          </td>
                           <td>{fmtDate(s.ts)}</td>
                           <td>{s.staff || '—'}</td>
                           <td>{s.customer || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
@@ -998,53 +1046,82 @@ export default function TeamPOSView({
                             </span>
                           </td>
                           <td className="num">
-                            <div className="mono" style={{ fontWeight: 800 }}>{money(realNetTotal)}</div>
+                            <div className={`mono ${s.isVoid ? 'strikethrough' : ''}`} style={{ fontWeight: 800 }}>
+                              {money(realNetTotal)}
+                            </div>
                             {discAmt > 0 && (
                               <div style={{ fontSize: '10.5px', color: 'var(--muted)' }}>Subtotal: {money(grossTotal)}</div>
                             )}
                           </td>
                           <td className="num">
                             {discAmt > 0 ? (
-                              <span className="mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(discAmt)}</span>
+                              <span className={`mono ${s.isVoid ? 'strikethrough' : ''}`} style={{ color: '#DC2626', fontWeight: 800 }}>- {money(discAmt)}</span>
                             ) : (
                               <span style={{ color: 'var(--muted)' }}>—</span>
                             )}
                           </td>
-                          <td className="num mono">{money(realPaid)}</td>
+                          <td className={`num mono ${s.isVoid ? 'strikethrough' : ''}`}>{money(realPaid)}</td>
                           <td className="num">
-                            {realBalance > 0 ? (
+                            {s.isVoid ? (
+                              <span className="badge badge-void" style={{ fontSize: '10px' }}>Wrong</span>
+                            ) : realBalance > 0 ? (
                               <span className="mono" style={{ color: 'var(--danger)', fontWeight: 800 }}>{money(realBalance)}</span>
                             ) : (
                               <span style={{ color: 'var(--emerald)', fontWeight: 700 }}>Paid</span>
                             )}
                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            {realBalance > 0 ? (
-                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {s.isVoid ? (
+                              <button
+                                className="btn ghost sm"
+                                style={{ fontSize: '11px', padding: '3px 8px', color: '#D97706', borderColor: 'rgba(217, 119, 6, 0.4)' }}
+                                title="Restore this wrong entry back to active sales"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleVoidSale(s.id);
+                                }}
+                              >
+                                ♻️ Restore
+                              </button>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                                {realBalance > 0 && (
+                                  <>
+                                    <button
+                                      className="btn primary sm"
+                                      title="Mark Paid as Cash"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onMarkPaid(s.id, 'Cash');
+                                      }}
+                                    >
+                                      💵 Cash
+                                    </button>
+                                    <button
+                                      className="btn primary sm"
+                                      style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
+                                      title="Mark Paid as Online"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onMarkPaid(s.id, 'Online');
+                                      }}
+                                    >
+                                      💳 Online
+                                    </button>
+                                  </>
+                                )}
                                 <button
-                                  className="btn primary sm"
-                                  title="Mark Paid as Cash"
+                                  className="btn ghost sm"
+                                  style={{ color: '#DC2626', borderColor: 'rgba(220, 38, 38, 0.3)', background: 'rgba(220, 38, 38, 0.05)', fontSize: '11px', padding: '3px 7px' }}
+                                  title="Mark as Wrong Entry"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onMarkPaid(s.id, 'Cash');
+                                    onToggleVoidSale(s.id, 'Wrong Entry');
                                   }}
                                 >
-                                  💵 Cash
-                                </button>
-                                <button
-                                  className="btn primary sm"
-                                  style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
-                                  title="Mark Paid as Online"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onMarkPaid(s.id, 'Online');
-                                  }}
-                                >
-                                  💳 Online
+                                  ⚠️ Wrong
                                 </button>
                               </div>
-                            ) : (
-                              <span style={{ color: 'var(--muted)' }}>—</span>
                             )}
                           </td>
                         </tr>

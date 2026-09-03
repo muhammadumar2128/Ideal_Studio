@@ -86,6 +86,7 @@ export default function AdminDashboard({
   setState,
   onLogout,
   onMarkPaid,
+  onToggleVoidSale,
   onDeleteSale,
   onAddExpense,
   onDeleteExpense,
@@ -156,8 +157,9 @@ export default function AdminDashboard({
 
   const availableMonths = Array.from(availableMonthsSet).sort().reverse();
 
-  // Sales aggregation
+  // Sales aggregation (excludes voided/duplicate sales)
   salesList.forEach(s => {
+    if (s.isVoid) return;
     const d = new Date(s.ts);
     const total = Number(s.total || 0);
     const paid = Number(s.paid != null ? s.paid : total);
@@ -235,6 +237,7 @@ export default function AdminDashboard({
 
   // Specific Selected Month Inspector Calculations
   const selectedSales = salesList.filter(s => {
+    if (s.isVoid) return false;
     const d = new Date(s.ts);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     return ym === selectedMonthKey;
@@ -252,7 +255,8 @@ export default function AdminDashboard({
   const selOrderCount = selectedSales.length;
   const selAvgOrder = selOrderCount > 0 ? Math.round(selGrossSales / selOrderCount) : 0;
 
-  const totalSalesCount = salesList.length;
+  const validSalesList = salesList.filter(s => !s.isVoid);
+  const totalSalesCount = validSalesList.length;
   const avgOrderValue = totalSalesCount > 0 ? Math.round(sTotalAll / totalSalesCount) : 0;
   const collectionRate = sTotalAll > 0 ? Math.round(((sTotalAll - totalPendingBal) / sTotalAll) * 100) : 100;
 
@@ -262,7 +266,7 @@ export default function AdminDashboard({
     date.setDate(date.getDate() - (6 - i));
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
     const dayRevenue = salesList
-      .filter(s => isSameDay(new Date(s.ts), date))
+      .filter(s => !s.isVoid && isSameDay(new Date(s.ts), date))
       .reduce((sum, s) => sum + Number(s.total || 0), 0);
     const dayExpense = expensesList
       .filter(e => isSameDay(new Date(e.ts), date))
@@ -309,8 +313,10 @@ export default function AdminDashboard({
     if (filterStaff && s.staff !== filterStaff) return false;
     if (!matchPeriod(d, filterDay)) return false;
     const bal = s.balance != null ? s.balance : 0;
-    if (filterStatus === "balance" && bal <= 0) return false;
-    if (filterStatus === "paid" && bal > 0) return false;
+    if (filterStatus === "active" && s.isVoid) return false;
+    if (filterStatus === "void" && !s.isVoid) return false;
+    if (filterStatus === "balance" && (s.isVoid || bal <= 0)) return false;
+    if (filterStatus === "paid" && (s.isVoid || bal > 0)) return false;
     const q = searchBox.toLowerCase().trim();
     if (q && s.id.toLowerCase().indexOf(q) < 0 && (s.customer || "").toLowerCase().indexOf(q) < 0) return false;
     return true;
@@ -961,18 +967,27 @@ export default function AdminDashboard({
                 <label>Status</label>
                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                   <option value="">All Statuses</option>
+                  <option value="active">Active Sales Only</option>
                   <option value="balance">Pending Balance</option>
                   <option value="paid">Fully Paid</option>
+                  <option value="void">🚫 Wrong Entries</option>
                 </select>
               </div>
             </div>
 
             <div className="hint" style={{ marginBottom: '14px' }}>
-              {filteredSales.length > 0 && (
-                <span>
-                  Showing <b>{filteredSales.length}</b> transaction(s) · Total: <b className="mono">{money(filteredSales.reduce((a, s) => a + s.total, 0))}</b>
-                </span>
-              )}
+              {filteredSales.length > 0 && (() => {
+                const activeInFilter = filteredSales.filter(s => !s.isVoid);
+                const voidInFilter = filteredSales.filter(s => s.isVoid);
+                const activeTotal = activeInFilter.reduce((a, s) => a + Number(s.total || 0), 0);
+                return (
+                  <span>
+                    Showing <b>{filteredSales.length}</b> transaction(s)
+                    {voidInFilter.length > 0 && ` (${activeInFilter.length} active, ${voidInFilter.length} wrong entries)`}
+                    {' · Active Total: '}<b className="mono">{money(activeTotal)}</b>
+                  </span>
+                );
+              })()}
             </div>
 
             {!filteredSales.length ? (
@@ -999,8 +1014,15 @@ export default function AdminDashboard({
                       const { grossTotal, discAmt, realNetTotal, realPaid, realBalance } = getSaleTotals(s);
                       const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
                       return (
-                        <tr key={s.id} className="click" onClick={() => setActiveModalSale(s)}>
-                          <td className="mono" style={{ fontWeight: 700 }}>{s.id}</td>
+                        <tr key={s.id} className={`click ${s.isVoid ? 'row-void' : ''}`} onClick={() => setActiveModalSale(s)}>
+                          <td className="mono" style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            <span className={s.isVoid ? 'strikethrough' : ''}>{s.id}</span>
+                            {s.isVoid && (
+                              <span className="badge badge-void" style={{ marginLeft: '6px', fontSize: '9.5px', padding: '1px 5px' }}>
+                                🚫 WRONG
+                              </span>
+                            )}
+                          </td>
                           <td>{fmtDate(s.ts)}</td>
                           <td>{s.staff || '—'}</td>
                           <td>{s.customer || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
@@ -1010,56 +1032,85 @@ export default function AdminDashboard({
                             </span>
                           </td>
                           <td className="num">
-                            <div className="mono" style={{ fontWeight: 800 }}>{money(realNetTotal)}</div>
+                            <div className={`mono ${s.isVoid ? 'strikethrough' : ''}`} style={{ fontWeight: 800 }}>{money(realNetTotal)}</div>
                             {discAmt > 0 && (
                               <div style={{ fontSize: '10.5px', color: 'var(--muted)' }}>Subtotal: {money(grossTotal)}</div>
                             )}
                           </td>
                           <td className="num">
                             {discAmt > 0 ? (
-                              <span className="mono" style={{ color: '#DC2626', fontWeight: 800 }}>- {money(discAmt)}</span>
+                              <span className={`mono ${s.isVoid ? 'strikethrough' : ''}`} style={{ color: '#DC2626', fontWeight: 800 }}>- {money(discAmt)}</span>
                             ) : (
                               <span style={{ color: 'var(--muted)' }}>—</span>
                             )}
                           </td>
-                          <td className="num mono">{money(realPaid)}</td>
+                          <td className={`num mono ${s.isVoid ? 'strikethrough' : ''}`}>{money(realPaid)}</td>
                           <td className="num">
-                            {realBalance > 0 ? (
+                            {s.isVoid ? (
+                              <span className="badge badge-void" style={{ fontSize: '10px' }}>Wrong</span>
+                            ) : realBalance > 0 ? (
                               <span className="mono" style={{ color: 'var(--danger)', fontWeight: 800 }}>{money(realBalance)}</span>
                             ) : (
                               <span style={{ color: '#059669', fontWeight: 700 }}>Paid</span>
                             )}
                           </td>
                           <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              {realBalance > 0 && (
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                              {s.isVoid ? (
+                                <button
+                                  className="btn ghost sm"
+                                  style={{ fontSize: '11px', padding: '3px 8px', color: '#D97706', borderColor: 'rgba(217, 119, 6, 0.4)' }}
+                                  title="Restore this wrong entry back to active sales"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onToggleVoidSale && onToggleVoidSale(s.id);
+                                  }}
+                                >
+                                  ♻️ Restore
+                                </button>
+                              ) : (
                                 <>
+                                  {realBalance > 0 && (
+                                    <>
+                                      <button
+                                        className="btn primary sm"
+                                        title="Mark Paid as Cash"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onMarkPaid(s.id, 'Cash');
+                                        }}
+                                      >
+                                        💵 Cash
+                                      </button>
+                                      <button
+                                        className="btn primary sm"
+                                        style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
+                                        title="Mark Paid as Online"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onMarkPaid(s.id, 'Online');
+                                        }}
+                                      >
+                                        💳 Online
+                                      </button>
+                                    </>
+                                  )}
                                   <button
-                                    className="btn primary sm"
-                                    title="Mark Paid as Cash"
+                                    className="btn ghost sm"
+                                    style={{ color: '#DC2626', borderColor: 'rgba(220, 38, 38, 0.3)', background: 'rgba(220, 38, 38, 0.05)', fontSize: '11px', padding: '3px 7px' }}
+                                    title="Mark as Wrong Entry"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onMarkPaid(s.id, 'Cash');
+                                      onToggleVoidSale && onToggleVoidSale(s.id, 'Wrong Entry');
                                     }}
                                   >
-                                    💵 Cash
-                                  </button>
-                                  <button
-                                    className="btn primary sm"
-                                    style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
-                                    title="Mark Paid as Online"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onMarkPaid(s.id, 'Online');
-                                    }}
-                                  >
-                                    💳 Online
+                                    ⚠️ Wrong
                                   </button>
                                 </>
                               )}
                               <button
                                 className="btn danger sm"
-                                title="Delete receipt permanently"
+                                title="Delete receipt permanently from database"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onDeleteSale && onDeleteSale(s.id);
@@ -1651,7 +1702,7 @@ export default function AdminDashboard({
         if (activeDrawer) {
           const openTs = Number(activeDrawer.openedAt || 0);
           salesList.forEach(s => {
-            if (Number(s.ts) >= openTs) {
+            if (!s.isVoid && Number(s.ts) >= openTs) {
               const pm = s.payMethod === 'Online' ? 'Online' : 'Cash';
               const { realPaid } = getSaleTotals(s);
               if (pm === 'Cash') {

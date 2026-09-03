@@ -187,6 +187,10 @@ export default function App() {
                   });
                 } else {
                   const pm = s.payMethod || (s.items && s.items[0] && s.items[0].payMethod) || 'Cash';
+                  const isVoid = Boolean(s.isVoid || (s.items && s.items[0] && s.items[0].isVoid));
+                  const voidReason = s.voidReason || (s.items && s.items[0] && s.items[0].voidReason) || '';
+                  const voidedAt = s.voidedAt || (s.items && s.items[0] && s.items[0].voidedAt) || null;
+                  const voidedBy = s.voidedBy || (s.items && s.items[0] && s.items[0].voidedBy) || '';
                   normalSales.push({
                     id: s.id,
                     ts: Number(s.ts),
@@ -197,7 +201,11 @@ export default function App() {
                     total: Number(s.total || 0),
                     paid: Number(s.paid != null ? s.paid : s.total),
                     balance: Number(s.balance || 0),
-                    payMethod: pm
+                    payMethod: pm,
+                    isVoid,
+                    voidReason,
+                    voidedAt,
+                    voidedBy
                   });
                 }
               });
@@ -285,6 +293,7 @@ export default function App() {
             });
           } else {
             const pm = row.payMethod || (row.items && row.items[0] && row.items[0].payMethod) || 'Cash';
+            const isVoid = Boolean(row.isVoid || (row.items && row.items[0] && row.items[0].isVoid));
             const formatted = {
               id: row.id,
               ts: Number(row.ts),
@@ -295,7 +304,11 @@ export default function App() {
               total: Number(row.total || 0),
               paid: Number(row.paid != null ? row.paid : row.total),
               balance: Number(row.balance || 0),
-              payMethod: pm
+              payMethod: pm,
+              isVoid,
+              voidReason: row.voidReason || (row.items && row.items[0] && row.items[0].voidReason) || '',
+              voidedAt: row.voidedAt || (row.items && row.items[0] && row.items[0].voidedAt) || null,
+              voidedBy: row.voidedBy || (row.items && row.items[0] && row.items[0].voidedBy) || ''
             };
             setState(prev => {
               if (prev.sales.some(s => s.id === formatted.id)) return prev;
@@ -326,6 +339,7 @@ export default function App() {
               expenses: (prev.expenses || []).map(e => e.id === row.id ? formattedExp : e)
             }));
           } else {
+            const isVoid = Boolean(row.isVoid || (row.items && row.items[0] && row.items[0].isVoid));
             setState(prev => ({
               ...prev,
               sales: prev.sales.map(s => s.id === row.id ? {
@@ -338,7 +352,11 @@ export default function App() {
                 total: Number(row.total || 0),
                 paid: Number(row.paid != null ? row.paid : row.total),
                 balance: Number(row.balance || 0),
-                payMethod: row.payMethod || (row.items && row.items[0] && row.items[0].payMethod) || 'Cash'
+                payMethod: row.payMethod || (row.items && row.items[0] && row.items[0].payMethod) || 'Cash',
+                isVoid,
+                voidReason: row.voidReason || (row.items && row.items[0] && row.items[0].voidReason) || '',
+                voidedAt: row.voidedAt || (row.items && row.items[0] && row.items[0].voidedAt) || null,
+                voidedBy: row.voidedBy || (row.items && row.items[0] && row.items[0].voidedBy) || ''
               } : s)
             }));
           }
@@ -514,6 +532,75 @@ export default function App() {
           .eq('id', saleId);
       } catch (err) {
         console.error('Error updating sale in Supabase:', err);
+      }
+    }
+  };
+
+  // Handle Toggle Wrong Entry on Sale (Counter Staff & Admin)
+  const handleToggleVoidSale = async (saleId, reason = 'Wrong Entry') => {
+    const targetSale = state.sales.find(s => s.id === saleId);
+    if (!targetSale) return;
+
+    const newIsVoid = !targetSale.isVoid;
+    const confirmPrompt = newIsVoid
+      ? `Mark receipt ${saleId} as WRONG ENTRY?\n\n` +
+        `• Excludes Rs ${Number(targetSale.total || 0).toLocaleString()} from sales and drawer cash totals.\n` +
+        `• Retains the transaction in records for audit tracking.\n\n` +
+        `Confirm marking as wrong entry?`
+      : `Restore receipt ${saleId} back to ACTIVE status?\n\n` +
+        `• Re-includes Rs ${Number(targetSale.total || 0).toLocaleString()} in sales revenue and drawer calculations.\n\n` +
+        `Confirm restoring this receipt?`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    const staffName = state.lastStaff || 'Counter Staff';
+    const voidMeta = {
+      isVoid: newIsVoid,
+      voidReason: newIsVoid ? reason : '',
+      voidedAt: newIsVoid ? Date.now() : null,
+      voidedBy: newIsVoid ? staffName : ''
+    };
+
+    const updatedItems = (targetSale.items || []).map((it, i) => {
+      if (i === 0) {
+        return {
+          ...it,
+          ...voidMeta
+        };
+      }
+      return it;
+    });
+
+    setState(prev => ({
+      ...prev,
+      sales: prev.sales.map(s => {
+        if (s.id === saleId) {
+          return {
+            ...s,
+            items: updatedItems,
+            ...voidMeta
+          };
+        }
+        return s;
+      })
+    }));
+
+    if (activeModalSale && activeModalSale.id === saleId) {
+      setActiveModalSale(prev => ({
+        ...prev,
+        items: updatedItems,
+        ...voidMeta
+      }));
+    }
+
+    if (supabase) {
+      try {
+        await supabase
+          .from('sales')
+          .update({ items: updatedItems })
+          .eq('id', saleId);
+      } catch (err) {
+        console.error('Error updating sale void status in Supabase:', err);
       }
     }
   };
@@ -729,11 +816,12 @@ export default function App() {
   };
 
   const handleExportCsv = () => {
-    const rows = [["Receipt", "Date", "Time", "Staff", "Customer", "Phone", "Category", "Item", "Qty", "Unit price", "Line total", "Receipt total"]];
+    const rows = [["Receipt", "Status", "Date", "Time", "Staff", "Customer", "Phone", "Category", "Item", "Qty", "Unit price", "Line total", "Receipt total"]];
     [...state.sales].reverse().forEach(s => {
       const d = new Date(s.ts);
+      const statusStr = s.isVoid ? "WRONG ENTRY" : "VALID";
       s.items.forEach(it => {
-        rows.push([s.id, d.toLocaleDateString("en-GB"), d.toLocaleTimeString("en-GB"), s.staff || "", s.customer || "", s.phone || "", it.cat, it.label, it.qty, it.price, it.price * it.qty, s.total]);
+        rows.push([s.id, statusStr, d.toLocaleDateString("en-GB"), d.toLocaleTimeString("en-GB"), s.staff || "", s.customer || "", s.phone || "", it.cat, it.label, it.qty, it.price, it.price * it.qty, s.total]);
       });
     });
     const csv = rows.map(r => r.map(c => {
@@ -903,6 +991,7 @@ export default function App() {
           state={state}
           onSaveSale={handleSaveSaleFromTeam}
           onMarkPaid={handleMarkPaid}
+          onToggleVoidSale={handleToggleVoidSale}
           onAddExpense={handleAddExpense}
           onDeleteExpense={handleDeleteExpense}
           setActiveModalSale={setActiveModalSale}
@@ -918,6 +1007,7 @@ export default function App() {
           setState={setState}
           onLogout={handleLogoutAdmin}
           onMarkPaid={handleMarkPaid}
+          onToggleVoidSale={handleToggleVoidSale}
           onDeleteSale={handleDeleteSale}
           onAddExpense={handleAddExpense}
           onDeleteExpense={handleDeleteExpense}
@@ -966,6 +1056,16 @@ export default function App() {
               <div className="rc-c rc-small">Sales Receipt</div>
               <div className="rc-sep"></div>
 
+              {activeModalSale.isVoid && (
+                <div className="rc-void-watermark">
+                  ⚠️ WRONG ENTRY
+                  <div style={{ fontSize: '10px', fontWeight: 600, marginTop: '2px', textTransform: 'none' }}>
+                    {activeModalSale.voidReason || 'Wrong Entry'}
+                    {activeModalSale.voidedAt && ` · ${fmtDate(activeModalSale.voidedAt)}`}
+                  </div>
+                </div>
+              )}
+
               <div className="rc-row"><span>Receipt</span><span>{activeModalSale.id}</span></div>
               <div className="rc-row"><span>Date</span><span>{fmtDate(activeModalSale.ts)}</span></div>
               {activeModalSale.staff && <div className="rc-row"><span>Served by</span><span>{activeModalSale.staff}</span></div>}
@@ -986,16 +1086,16 @@ export default function App() {
 
               <div className="rc-total">
                 <span>TOTAL</span>
-                <span>{money(activeModalSale.total)}</span>
+                <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.total)}</span>
               </div>
               <div className="rc-row" style={{ marginTop: '4px' }}>
                 <span>Paid ({activeModalSale.payMethod === 'Online' ? '💳 Online' : '💵 Cash'})</span>
-                <span>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
+                <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
               </div>
               {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
                 <div className="rc-row" style={{ fontWeight: 700 }}>
                   <span>BALANCE</span>
-                  <span>{money(activeModalSale.balance)}</span>
+                  <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.balance)}</span>
                 </div>
               )}
               <div className="rc-foot">
@@ -1007,9 +1107,9 @@ export default function App() {
 
           <div className="rc-actions">
             <button className="btn primary" style={{ flex: 1 }} onClick={() => window.print()}>
-              🖨️ Print Receipt
+              🖨️ Print
             </button>
-            {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
+            {!activeModalSale.isVoid && (activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
               <>
                 <button
                   className="btn primary"
@@ -1026,6 +1126,35 @@ export default function App() {
                   💳 Paid (Online)
                 </button>
               </>
+            )}
+            {activeModalSale.isVoid ? (
+              <button
+                className="btn primary"
+                style={{ flex: 1, background: '#D97706', borderColor: '#D97706' }}
+                onClick={() => handleToggleVoidSale(activeModalSale.id)}
+                title="Restore this receipt back to active sales"
+              >
+                ♻️ Restore Sale
+              </button>
+            ) : (
+              <button
+                className="btn ghost"
+                style={{ flex: 1, color: '#DC2626', borderColor: 'rgba(220, 38, 38, 0.3)', background: 'rgba(220, 38, 38, 0.05)' }}
+                onClick={() => handleToggleVoidSale(activeModalSale.id, 'Wrong Entry')}
+                title="Mark this receipt as Wrong Entry"
+              >
+                ⚠️ Wrong Entry
+              </button>
+            )}
+            {adminUser && (
+              <button
+                className="btn danger"
+                style={{ flex: 1 }}
+                onClick={() => handleDeleteSale(activeModalSale.id)}
+                title="Permanently delete from database (Admin Only)"
+              >
+                🗑️ Delete
+              </button>
             )}
             <button className="btn ghost" style={{ flex: 1 }} onClick={() => setActiveModalSale(null)}>
               Close
