@@ -545,17 +545,38 @@ export default function App() {
 
   // Expense Handlers
   const handleAddExpense = async ({ title, amount, category, staff }) => {
+    const amt = Number(amount) || 0;
+    const expStaff = staff || state.lastStaff || "Umar";
     const newExp = {
       id: "EXP-" + Date.now(),
       ts: Date.now(),
       title: title.trim(),
-      amount: Number(amount) || 0,
+      amount: amt,
       category: category || "General",
-      staff: staff || state.lastStaff || "Umar"
+      staff: expStaff
     };
+
+    // If a Cash Drawer shift is currently active, automatically record this as a cash withdrawal (Cash Out) from the register!
+    let updatedDrawerSession = state.activeDrawerSession;
+    if (updatedDrawerSession) {
+      const drawerAdj = {
+        id: "ADJ-" + newExp.id,
+        expenseId: newExp.id,
+        ts: newExp.ts,
+        type: 'out',
+        amount: amt,
+        reason: `Expense: ${newExp.title} (${newExp.category})`,
+        staff: expStaff
+      };
+      updatedDrawerSession = {
+        ...updatedDrawerSession,
+        adjustments: [...(updatedDrawerSession.adjustments || []), drawerAdj]
+      };
+    }
 
     const nextState = {
       ...state,
+      activeDrawerSession: updatedDrawerSession,
       expenses: [newExp, ...(state.expenses || [])]
     };
     setState(nextState);
@@ -581,8 +602,19 @@ export default function App() {
 
   const handleDeleteExpense = async (expId) => {
     if (!window.confirm("Are you sure you want to permanently delete this expense record?")) return;
+    
+    // Also remove from active drawer adjustments if it was automatically linked
+    let updatedDrawerSession = state.activeDrawerSession;
+    if (updatedDrawerSession && updatedDrawerSession.adjustments) {
+      updatedDrawerSession = {
+        ...updatedDrawerSession,
+        adjustments: updatedDrawerSession.adjustments.filter(a => a.expenseId !== expId && a.id !== `ADJ-${expId}`)
+      };
+    }
+
     const nextState = {
       ...state,
+      activeDrawerSession: updatedDrawerSession,
       expenses: (state.expenses || []).filter(e => e.id !== expId)
     };
     setState(nextState);

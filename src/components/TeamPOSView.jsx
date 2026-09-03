@@ -337,6 +337,7 @@ export default function TeamPOSView({
   const submitTeamExpense = (e) => {
     e.preventDefault();
     if (!expTitle.trim() || !expAmount) return;
+    const amt = Number(expAmount) || 0;
     onAddExpense({
       title: expTitle,
       amount: expAmount,
@@ -345,7 +346,11 @@ export default function TeamPOSView({
     });
     setExpTitle('');
     setExpAmount('');
-    alert("Expense logged successfully!");
+    if (activeSession) {
+      alert(`✅ Expense of ${money(amt)} logged successfully!\n\nCash has been automatically taken out from the active cash drawer.`);
+    } else {
+      alert(`✅ Expense of ${money(amt)} logged successfully!`);
+    }
   };
 
   // Records filtering (Staff view limited to last 3 days)
@@ -428,7 +433,9 @@ export default function TeamPOSView({
 
     (activeSession.adjustments || []).forEach(a => {
       if (a.type === 'in') drawerCashInTotal += Number(a.amount || 0);
-      if (a.type === 'out') drawerCashOutTotal += Number(a.amount || 0);
+      if (a.type === 'out' && !a.expenseId && !(a.id && a.id.startsWith('ADJ-EXP-'))) {
+        drawerCashOutTotal += Number(a.amount || 0);
+      }
     });
 
     expectedDrawerCash = Number(activeSession.openingFloat || 0) + drawerCashSalesTotal + drawerCashInTotal - drawerCashExpensesTotal - drawerCashOutTotal;
@@ -1290,6 +1297,27 @@ export default function TeamPOSView({
                     ➖ Take Out Money (Cash Out)
                   </button>
                 </div>
+
+                {/* SHIFT CASH MOVEMENTS (INCLUDES EXPENSES AUTOMATICALLY TAKEN OUT) */}
+                {activeSession.adjustments && activeSession.adjustments.length > 0 && (
+                  <div style={{ marginBottom: '16px', padding: '10px 12px', background: 'var(--paper)', borderRadius: '10px', border: '1px solid var(--line)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', color: 'var(--muted)', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                      📋 Cash In / Out Activity ({activeSession.adjustments.length}):
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '100px', overflowY: 'auto' }}>
+                      {activeSession.adjustments.slice().reverse().map(a => (
+                        <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                          <span style={{ color: a.type === 'in' ? '#059669' : '#DC2626', fontWeight: 600 }}>
+                            {a.type === 'in' ? '➕ Cash In' : '➖ Cash Out'}: {a.reason || 'Counter adjustment'}
+                          </span>
+                          <span className="mono" style={{ fontWeight: 800, color: a.type === 'in' ? '#059669' : '#DC2626' }}>
+                            {a.type === 'in' ? '+' : '-'} {money(a.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* END-OF-DAY PHYSICAL CURRENCY NOTE COUNTER */}
                 <div style={{ borderTop: '1px solid var(--line)', paddingTop: '16px' }}>
