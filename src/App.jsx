@@ -164,12 +164,20 @@ export default function App() {
           setCloudSynced(true);
           setState(prev => {
             const updated = { ...prev };
+            let maxSaleNum = 0;
             if (salesRes.data && salesRes.data.length > 0) {
               const normalSales = [];
               const expList = [];
               const drawerList = [];
 
               salesRes.data.forEach(s => {
+                if (s.id && typeof s.id === 'string' && s.id.startsWith('R-')) {
+                  const num = parseInt(s.id.slice(2), 10);
+                  if (!isNaN(num) && num > maxSaleNum) {
+                    maxSaleNum = num;
+                  }
+                }
+
                 const isExp = s.customer === '__EXPENSE__' || (s.id && String(s.id).startsWith('EXP-'));
                 const isDrawer = s.customer === '__DRAWER_SESSION__' || (s.id && String(s.id).startsWith('DRAWER-'));
                 if (isDrawer) {
@@ -232,7 +240,8 @@ export default function App() {
               const isRemoteNewer = remoteTime > localTime;
 
               if (st.studio_name && (isRemoteNewer || !updated.studio)) updated.studio = st.studio_name;
-              if (st.counter != null && st.counter > updated.counter) updated.counter = st.counter;
+              const dbCounter = st.counter != null ? Number(st.counter) : 0;
+              updated.counter = Math.max(Number(updated.counter || 0), dbCounter, maxSaleNum);
               if (st.last_staff && (isRemoteNewer || !updated.lastStaff)) updated.lastStaff = st.last_staff;
               if (st.staff && Array.isArray(st.staff) && st.staff.length > 0 && (isRemoteNewer || !updated.staff.length)) updated.staff = st.staff;
               if (st.prints && typeof st.prints === 'object' && Object.keys(st.prints).length > 0 && (isRemoteNewer || !Object.keys(updated.prints || {}).length)) updated.prints = st.prints;
@@ -247,12 +256,15 @@ export default function App() {
               if (st.misc && Array.isArray(st.misc) && st.misc.length > 0 && (isRemoteNewer || !updated.misc.length)) updated.misc = st.misc;
 
               // If local settings are newer or database is missing fields, sync full local settings to cloud
-              if (localTime > remoteTime || !st.updated_at) {
+              if (localTime > remoteTime || !st.updated_at || updated.counter > dbCounter) {
                 setTimeout(() => syncSettingsToCloud(updated), 500);
               }
-            } else if (!settingsRes.error) {
-              // Populate remote settings table if empty
-              setTimeout(() => syncSettingsToCloud(updated), 500);
+            } else {
+              updated.counter = Math.max(Number(updated.counter || 0), maxSaleNum);
+              if (!settingsRes.error) {
+                // Populate remote settings table if empty
+                setTimeout(() => syncSettingsToCloud(updated), 500);
+              }
             }
             return updated;
           });
@@ -310,9 +322,11 @@ export default function App() {
               voidedAt: row.voidedAt || (row.items && row.items[0] && row.items[0].voidedAt) || null,
               voidedBy: row.voidedBy || (row.items && row.items[0] && row.items[0].voidedBy) || ''
             };
+            const saleNum = (row.id && typeof row.id === 'string' && row.id.startsWith('R-')) ? parseInt(row.id.slice(2), 10) : 0;
             setState(prev => {
               if (prev.sales.some(s => s.id === formatted.id)) return prev;
-              return { ...prev, sales: [formatted, ...prev.sales] };
+              const nextCounter = (!isNaN(saleNum) && saleNum > prev.counter) ? saleNum : prev.counter;
+              return { ...prev, counter: nextCounter, sales: [formatted, ...prev.sales] };
             });
           }
         } else if (payload.eventType === 'UPDATE') {
@@ -419,7 +433,7 @@ export default function App() {
 
     if (!supabase) return;
     try {
-      const { error } = await supabase.from('studio_settings').upsert({
+      const payload = {
         id: 1,
         studio_name: updatedState.studio,
         counter: updatedState.counter,
@@ -436,7 +450,18 @@ export default function App() {
         sets: updatedState.sets,
         misc: updatedState.misc,
         updated_at: new Date().toISOString()
-      });
+      };
+
+      let { error } = await supabase.from('studio_settings').upsert(payload);
+
+      // If ctc_exp or ctc_ro columns don't exist yet in Supabase schema cache, retry without them
+      if (error && (error.message?.includes('ctc_exp') || error.message?.includes('ctc_ro'))) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.ctc_exp;
+        delete fallbackPayload.ctc_ro;
+        const retry = await supabase.from('studio_settings').upsert(fallbackPayload);
+        error = retry.error;
+      }
 
       if (error) {
         console.error('Supabase settings upsert error:', error.message);
@@ -448,11 +473,20 @@ export default function App() {
 
   // Handle saving new sale from Team POS
   const handleSaveSaleFromTeam = async ({ cart, selStaff, fCust, fPhone, cartTotal, paidVal, cartBalance, payMethod }) => {
-    const nextCounter = state.counter + 1;
+    // Ensure nextCounter is strictly higher than any known sale
+    const maxExistingSaleNum = (state.sales || []).reduce((max, s) => {
+      if (s.id && typeof s.id === 'string' && s.id.startsWith('R-')) {
+        const num = parseInt(s.id.slice(2), 10);
+        if (!isNaN(num) && num > max) return num;
+      }
+      return max;
+    }, 0);
+
+    let nextCounter = Math.max(Number(state.counter || 0), maxExistingSaleNum) + 1;
     const chosenPayMethod = payMethod || 'Cash';
     const itemsWithPayMethod = cart.map((it, i) => i === 0 ? { ...it, payMethod: chosenPayMethod } : it);
 
-    const newSale = {
+    let newSale = {
       id: "R-" + pad(nextCounter),
       ts: Date.now(),
       staff: selStaff,
@@ -465,7 +499,7 @@ export default function App() {
       payMethod: chosenPayMethod
     };
 
-    const nextState = {
+    let nextState = {
       ...state,
       counter: nextCounter,
       lastStaff: selStaff,
@@ -476,7 +510,7 @@ export default function App() {
 
     if (supabase) {
       try {
-        const { error: saleErr } = await supabase.from('sales').insert([{
+        const saleToInsert = {
           id: newSale.id,
           ts: newSale.ts,
           staff: newSale.staff,
@@ -486,7 +520,35 @@ export default function App() {
           total: newSale.total,
           paid: newSale.paid,
           balance: newSale.balance
-        }]);
+        };
+
+        let { error: saleErr } = await supabase.from('sales').insert([saleToInsert]);
+
+        // If duplicate receipt key error (HTTP 409 / Postgres 23505), auto-increment to highest and retry
+        if (saleErr && (saleErr.code === '23505' || saleErr.status === 409 || saleErr.message?.includes('duplicate'))) {
+          console.warn('Receipt ID collision detected, recalculating from remote sales...');
+          const { data: latestSales } = await supabase.from('sales').select('id').order('ts', { ascending: false }).limit(30);
+          let highest = nextCounter;
+          (latestSales || []).forEach(s => {
+            if (s.id && typeof s.id === 'string' && s.id.startsWith('R-')) {
+              const n = parseInt(s.id.slice(2), 10);
+              if (!isNaN(n) && n >= highest) highest = n + 1;
+            }
+          });
+          saleToInsert.id = "R-" + pad(highest);
+          newSale = { ...newSale, id: saleToInsert.id };
+          const retryRes = await supabase.from('sales').insert([saleToInsert]);
+          saleErr = retryRes.error;
+          nextCounter = highest;
+          nextState = {
+            ...nextState,
+            counter: highest,
+            sales: [newSale, ...state.sales.filter(s => s.id !== newSale.id)]
+          };
+          setState(nextState);
+          setActiveModalSale(newSale);
+        }
+
         if (saleErr) console.error('Supabase sale insert error:', saleErr);
 
         // Sync full settings state (never partial upsert!)
