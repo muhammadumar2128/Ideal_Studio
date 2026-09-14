@@ -45,6 +45,7 @@ function getDefaults() {
     sales: [],
     staff: ["Umar", "Kabeer", "Owner - Usman", "Alex"],
     lastStaff: "Umar",
+    adminPassword: "irhaali",
     prints,
     frames,
     albumExp: exp,
@@ -105,9 +106,19 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [cloudSynced, setCloudSynced] = useState(false);
   const [activeModalSale, setActiveModalSale] = useState(null);
+  const [billFormat, setBillFormat] = useState('receipt'); // 'receipt' (standard 80mm slip) or 'invoice' (formal A4 invoice)
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('studio_pos_theme') || 'light';
   });
+
+  useEffect(() => {
+    if (activeModalSale && billFormat === 'invoice') {
+      document.body.classList.add('print-formal-invoice');
+    } else {
+      document.body.classList.remove('print-formal-invoice');
+    }
+    return () => document.body.classList.remove('print-formal-invoice');
+  }, [activeModalSale, billFormat]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -180,7 +191,12 @@ export default function App() {
 
                 const isExp = s.customer === '__EXPENSE__' || (s.id && String(s.id).startsWith('EXP-'));
                 const isDrawer = s.customer === '__DRAWER_SESSION__' || (s.id && String(s.id).startsWith('DRAWER-'));
-                if (isDrawer) {
+                const isConfig = s.customer === '__SYSTEM_AUTH__' || s.id === 'CFG-ADMIN-AUTH';
+                if (isConfig) {
+                  if (s.items && s.items[0] && s.items[0].password) {
+                    updated.adminPassword = s.items[0].password;
+                  }
+                } else if (isDrawer) {
                   if (s.items && s.items[0]) {
                     drawerList.push(s.items[0]);
                   }
@@ -284,7 +300,12 @@ export default function App() {
           const row = payload.new;
           const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
           const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
-          if (isDrawer) {
+          const isConfig = row.customer === '__SYSTEM_AUTH__' || row.id === 'CFG-ADMIN-AUTH';
+          if (isConfig) {
+            if (row.items && row.items[0] && row.items[0].password) {
+              setState(prev => ({ ...prev, adminPassword: row.items[0].password }));
+            }
+          } else if (isDrawer) {
             const drawerData = (row.items && row.items[0]) || row;
             setState(prev => {
               if (prev.drawerHistory && prev.drawerHistory.some(d => d.id === drawerData.id)) return prev;
@@ -333,7 +354,12 @@ export default function App() {
           const row = payload.new;
           const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
           const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
-          if (isDrawer) {
+          const isConfig = row.customer === '__SYSTEM_AUTH__' || row.id === 'CFG-ADMIN-AUTH';
+          if (isConfig) {
+            if (row.items && row.items[0] && row.items[0].password) {
+              setState(prev => ({ ...prev, adminPassword: row.items[0].password }));
+            }
+          } else if (isDrawer) {
             const drawerData = (row.items && row.items[0]) || row;
             setState(prev => ({
               ...prev,
@@ -990,6 +1016,38 @@ export default function App() {
     setViewMode('team');
   };
 
+  const handleChangeAdminPassword = async (newPassword) => {
+    const updatedState = {
+      ...state,
+      adminPassword: newPassword,
+      _lastLocalUpdate: Date.now()
+    };
+    setState(updatedState);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(updatedState));
+    } catch (e) {
+      console.error('LocalStorage save error:', e);
+    }
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').upsert([{
+          id: 'CFG-ADMIN-AUTH',
+          ts: Date.now(),
+          staff: 'System',
+          customer: '__SYSTEM_AUTH__',
+          phone: 'admin',
+          items: [{ password: newPassword, updatedAt: new Date().toISOString() }],
+          total: 0,
+          paid: 0,
+          balance: 0
+        }]);
+      } catch (err) {
+        console.error('Error saving admin password to Supabase:', err);
+      }
+    }
+  };
+
   // 1. If not authenticated into the Platform yet, render Platform Login screen
   if (!isPlatformAuth) {
     return (
@@ -1122,12 +1180,14 @@ export default function App() {
           onDrawerAdjustment={handleDrawerAdjustment}
           onCloseDrawer={handleCloseDrawer}
           onDeleteDrawerHistory={handleDeleteDrawerHistory}
+          onChangeAdminPassword={handleChangeAdminPassword}
         />
       )}
 
       {/* ADMIN LOGIN MODAL */}
       {showLoginModal && (
         <AdminLogin
+          adminPassword={state.adminPassword || 'irhaali'}
           onLoginSuccess={(user) => {
             setAdminUser(user);
             setShowLoginModal(false);
@@ -1149,61 +1209,203 @@ export default function App() {
         }}
       >
         <div>
-          <div id="receipt">
-            <div className="rc-in">
-              <div className="rc-c rc-name">{state.studio}</div>
-              <div className="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
-              <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5006990</div>
-              <div className="rc-c rc-small">Sales Receipt</div>
-              <div className="rc-sep"></div>
+          {/* FORMAT TOGGLE BAR (Standard 80mm Slip vs Formal A4 Invoice) */}
+          <div className="no-print" style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '14px' }}>
+            <button
+              type="button"
+              className={`btn ${billFormat === 'receipt' ? 'primary' : 'ghost'} sm`}
+              onClick={() => setBillFormat('receipt')}
+              style={{ borderRadius: '20px', padding: '6px 16px', fontSize: '12.5px', fontWeight: 700 }}
+            >
+              🧾 Standard Slip (80mm)
+            </button>
+            <button
+              type="button"
+              className={`btn ${billFormat === 'invoice' ? 'primary' : 'ghost'} sm`}
+              onClick={() => setBillFormat('invoice')}
+              style={{ borderRadius: '20px', padding: '6px 16px', fontSize: '12.5px', fontWeight: 700 }}
+            >
+              📄 Formal Invoice (5×7")
+            </button>
+          </div>
 
-              {activeModalSale.isVoid && (
-                <div className="rc-void-watermark">
-                  ⚠️ WRONG ENTRY
-                  <div style={{ fontSize: '10px', fontWeight: 600, marginTop: '2px', textTransform: 'none' }}>
-                    {activeModalSale.voidReason || 'Wrong Entry'}
-                    {activeModalSale.voidedAt && ` · ${fmtDate(activeModalSale.voidedAt)}`}
+          <div id="receipt" className={billFormat === 'invoice' ? 'formal-invoice' : 'thermal-receipt'}>
+            {billFormat === 'invoice' ? (
+              <div className="invoice-container">
+                {/* INVOICE HEADER */}
+                <div className="inv-header">
+                  <div className="inv-brand">
+                    <div className="inv-title-main">{state.studio || 'Ideal Photo Studio'}</div>
+                    <div className="inv-subtitle">Digital Photography, Photo Printing &amp; Custom Framing</div>
+                    <div className="inv-contact-text">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
+                    <div className="inv-contact-text">📞 0304-5225523 · WhatsApp: 0327-5006990</div>
+                  </div>
+                  <div className="inv-meta-block">
+                    <div className="inv-doc-type">TAX INVOICE</div>
+                    <div className="inv-meta-row">
+                      <span className="inv-meta-k">Invoice No:</span>
+                      <span className="inv-meta-v mono">{activeModalSale.id}</span>
+                    </div>
+                    <div className="inv-meta-row">
+                      <span className="inv-meta-k">Date:</span>
+                      <span className="inv-meta-v">{fmtDate(activeModalSale.ts)}</span>
+                    </div>
+                    <div className="inv-status-pill-wrap">
+                      {activeModalSale.isVoid ? (
+                        <span className="inv-pill void">WRONG ENTRY / VOID</span>
+                      ) : (activeModalSale.balance != null ? activeModalSale.balance : 0) <= 0 ? (
+                        <span className="inv-pill paid">PAID IN FULL</span>
+                      ) : (
+                        <span className="inv-pill balance">BALANCE DUE: {money(activeModalSale.balance)}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              )}
 
-              <div className="rc-row"><span>Receipt</span><span>{activeModalSale.id}</span></div>
-              <div className="rc-row"><span>Date</span><span>{fmtDate(activeModalSale.ts)}</span></div>
-              {activeModalSale.staff && <div className="rc-row"><span>Served by</span><span>{activeModalSale.staff}</span></div>}
-              {activeModalSale.customer && <div className="rc-row"><span>Customer</span><span>{activeModalSale.customer}</span></div>}
-              {activeModalSale.phone && <div className="rc-row"><span>Phone</span><span>{activeModalSale.phone}</span></div>}
-
-              <div className="rc-sep"></div>
-              {activeModalSale.items.map((it, idx) => (
-                <div key={idx} className="rc-item">
-                  <div className="top">
-                    <span>{it.label}</span>
-                    <span>{money(it.price * it.qty)}</span>
+                {/* BILLED TO / DETAILS BAR */}
+                <div className="inv-info-grid">
+                  <div className="inv-info-col">
+                    <div className="inv-info-heading">BILLED TO:</div>
+                    <div className="inv-info-val-strong">{activeModalSale.customer || 'Walking Customer'}</div>
+                    {activeModalSale.phone && <div className="inv-info-val">Phone: {activeModalSale.phone}</div>}
                   </div>
-                  {it.cat !== 'Discount' && <div className="sub">{it.qty} × {money(it.price)}</div>}
+                  <div className="inv-info-col">
+                    <div className="inv-info-heading">PAYMENT DETAILS:</div>
+                    <div className="inv-info-val">Method: <strong>{activeModalSale.payMethod === 'Online' ? '💳 Online Transfer' : '💵 Cash'}</strong></div>
+                    <div className="inv-info-val">Served By: <strong>{activeModalSale.staff || 'Staff'}</strong></div>
+                  </div>
                 </div>
-              ))}
-              <div className="rc-sep"></div>
 
-              <div className="rc-total">
-                <span>TOTAL</span>
-                <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.total)}</span>
-              </div>
-              <div className="rc-row" style={{ marginTop: '4px' }}>
-                <span>Paid ({activeModalSale.payMethod === 'Online' ? '💳 Online' : '💵 Cash'})</span>
-                <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
-              </div>
-              {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
-                <div className="rc-row" style={{ fontWeight: 700 }}>
-                  <span>BALANCE</span>
-                  <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.balance)}</span>
+                {/* ITEMS TABLE */}
+                <table className="inv-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>#</th>
+                      <th>Item &amp; Description</th>
+                      <th style={{ width: '100px', textAlign: 'center' }}>Category</th>
+                      <th style={{ width: '95px', textAlign: 'right' }}>Unit Price</th>
+                      <th style={{ width: '60px', textAlign: 'center' }}>Qty</th>
+                      <th style={{ width: '115px', textAlign: 'right' }}>Total ({CUR})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeModalSale.items.map((it, idx) => (
+                      <tr key={idx} className={it.cat === 'Discount' ? 'inv-row-discount' : ''}>
+                        <td className="mono" style={{ opacity: 0.7 }}>{idx + 1}</td>
+                        <td>
+                          <div style={{ fontWeight: 700 }}>{it.label}</div>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span className="inv-item-cat">{it.cat || 'General'}</span>
+                        </td>
+                        <td className="mono" style={{ textAlign: 'right' }}>
+                          {it.price < 0 ? `- ${money(Math.abs(it.price))}` : money(it.price)}
+                        </td>
+                        <td className="mono" style={{ textAlign: 'center' }}>{it.qty}</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>
+                          {it.price < 0 ? `- ${money(Math.abs(it.price * it.qty))}` : money(it.price * it.qty)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* TOTALS & SUMMARY */}
+                <div className="inv-summary-section">
+                  <div className="inv-terms-col">
+                    <div className="inv-terms-title">Terms &amp; Instructions:</div>
+                    <div className="inv-terms-text">• Photographs &amp; prints once delivered are not refundable.</div>
+                    <div className="inv-terms-text">• Please present this invoice receipt when collecting your order.</div>
+                    <div className="inv-terms-text">• Thank you for your business!</div>
+                  </div>
+                  <div className="inv-totals-box">
+                    <div className="inv-tot-row">
+                      <span>Subtotal</span>
+                      <span className="mono">{money(activeModalSale.total)}</span>
+                    </div>
+                    <div className="inv-tot-row inv-tot-main">
+                      <span>Total Amount</span>
+                      <span className="mono">{money(activeModalSale.total)}</span>
+                    </div>
+                    <div className="inv-tot-row">
+                      <span>Amount Paid</span>
+                      <span className="mono">{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
+                    </div>
+                    <div className="inv-tot-row inv-tot-balance" style={{ color: (activeModalSale.balance || 0) > 0 ? '#DC2626' : '#059669' }}>
+                      <span>Balance Due</span>
+                      <span className="mono">{money(activeModalSale.balance || 0)}</span>
+                    </div>
+                  </div>
                 </div>
-              )}
-              <div className="rc-foot">
-                Payment: {activeModalSale.payMethod === 'Online' ? 'Online Transfer (Bank/JazzCash)' : 'Cash'}<br />
-                Please keep this receipt for photo collection. Thank you!<br />Powered By Lunar Ai
+
+                {/* INVOICE SIGNATURE FOOTER */}
+                <div className="inv-sign-footer">
+                  <div className="inv-sign-block">
+                    <div className="inv-sign-line"></div>
+                    <div>Customer Signature</div>
+                  </div>
+                  <div className="inv-sign-block">
+                    <div className="inv-sign-line"></div>
+                    <div>Authorized Stamp &amp; Signature</div>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rc-in">
+                <div className="rc-c rc-name">{state.studio}</div>
+                <div className="rc-c rc-small">Shop # 45, Post Office Market HIT, Taxila Cantt</div>
+                <div className="rc-c rc-small">Ph: 0304-5225523 · WhatsApp: 0327-5006990</div>
+                <div className="rc-c rc-small">Sales Receipt</div>
+                <div className="rc-sep"></div>
+
+                {activeModalSale.isVoid && (
+                  <div className="rc-void-watermark">
+                    ⚠️ WRONG ENTRY
+                    <div style={{ fontSize: '10px', fontWeight: 600, marginTop: '2px', textTransform: 'none' }}>
+                      {activeModalSale.voidReason || 'Wrong Entry'}
+                      {activeModalSale.voidedAt && ` · ${fmtDate(activeModalSale.voidedAt)}`}
+                    </div>
+                  </div>
+                )}
+
+                <div className="rc-row"><span>Receipt</span><span>{activeModalSale.id}</span></div>
+                <div className="rc-row"><span>Date</span><span>{fmtDate(activeModalSale.ts)}</span></div>
+                {activeModalSale.staff && <div className="rc-row"><span>Served by</span><span>{activeModalSale.staff}</span></div>}
+                {activeModalSale.customer && <div className="rc-row"><span>Customer</span><span>{activeModalSale.customer}</span></div>}
+                {activeModalSale.phone && <div className="rc-row"><span>Phone</span><span>{activeModalSale.phone}</span></div>}
+
+                <div className="rc-sep"></div>
+                {activeModalSale.items.map((it, idx) => (
+                  <div key={idx} className="rc-item">
+                    <div className="top">
+                      <span>{it.label}</span>
+                      <span>{money(it.price * it.qty)}</span>
+                    </div>
+                    {it.cat !== 'Discount' && <div className="sub">{it.qty} × {money(it.price)}</div>}
+                  </div>
+                ))}
+                <div className="rc-sep"></div>
+
+                <div className="rc-total">
+                  <span>TOTAL</span>
+                  <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.total)}</span>
+                </div>
+                <div className="rc-row" style={{ marginTop: '4px' }}>
+                  <span>Paid ({activeModalSale.payMethod === 'Online' ? '💳 Online' : '💵 Cash'})</span>
+                  <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.paid != null ? activeModalSale.paid : activeModalSale.total)}</span>
+                </div>
+                {(activeModalSale.balance != null ? activeModalSale.balance : 0) > 0 && (
+                  <div className="rc-row" style={{ fontWeight: 700 }}>
+                    <span>BALANCE</span>
+                    <span className={activeModalSale.isVoid ? 'strikethrough' : ''}>{money(activeModalSale.balance)}</span>
+                  </div>
+                )}
+                <div className="rc-foot">
+                  Payment: {activeModalSale.payMethod === 'Online' ? 'Online Transfer (Bank/JazzCash)' : 'Cash'}<br />
+                  Please keep this receipt for photo collection. Thank you!<br />Powered By Lunar Ai
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rc-actions">

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient.js';
 
-export default function AdminLogin({ onLoginSuccess, onClose }) {
+export default function AdminLogin({ onLoginSuccess, onClose, adminPassword = 'irhaali' }) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,8 +21,10 @@ export default function AdminLogin({ onLoginSuccess, onClose }) {
 
     setLoading(true);
 
+    const masterPass = (adminPassword && String(adminPassword).trim()) || 'irhaali';
+
     // 1. Instant check for master admin credentials (bypasses unnecessary Supabase HTTP 400 calls)
-    if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === 'irhaali') {
+    if ((inputUser === 'admin' || inputUser === 'admin@idealstudio.com') && inputPass === masterPass) {
       onLoginSuccess({ username: 'admin', email: 'admin@idealstudio.com' });
       setLoading(false);
       return;

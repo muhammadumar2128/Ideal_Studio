@@ -825,10 +825,305 @@ tbody tr.row-void:hover {
   color: #D97706;
 }
 
+/* ===================================================
+   FORMAL INVOICE STYLES (5x7 Inches Studio Bill Format)
+   =================================================== */
+#receipt.formal-invoice {
+  width: 500px;
+  max-width: 95vw;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #1e293b;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.invoice-container {
+  padding: 20px 22px;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1e293b;
+}
+
+.inv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid #cbd5e1;
+  gap: 12px;
+}
+
+.inv-title-main {
+  font-size: 19px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+}
+
+.inv-subtitle {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+  font-weight: 600;
+}
+
+.inv-contact-text {
+  font-size: 10.5px;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.inv-meta-block {
+  text-align: right;
+  min-width: 170px;
+}
+
+.inv-doc-type {
+  font-size: 17px;
+  font-weight: 900;
+  color: #2563eb;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.inv-meta-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+.inv-meta-k {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.inv-meta-v {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.inv-status-pill-wrap {
+  margin-top: 6px;
+}
+
+.inv-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.inv-pill.paid {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.inv-pill.balance {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+}
+
+.inv-pill.void {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.inv-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 12px 0 14px;
+}
+
+.inv-info-heading {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.inv-info-val-strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.inv-info-val {
+  font-size: 11.5px;
+  color: #334155;
+  margin-top: 1px;
+}
+
+.inv-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 14px;
+}
+
+.inv-table th {
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 6px 8px;
+  border-top: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.inv-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #1e293b;
+  font-size: 11.5px;
+}
+
+.inv-table tr.inv-row-discount td {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.inv-item-cat {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.inv-summary-section {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 6px;
+}
+
+.inv-terms-col {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border-left: 2.5px solid #2563eb;
+}
+
+.inv-terms-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 2px;
+}
+
+.inv-terms-text {
+  font-size: 10px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.inv-totals-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.inv-tot-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 11.5px;
+  color: #475569;
+}
+
+.inv-tot-row.inv-tot-main {
+  border-top: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  padding: 6px 0;
+  margin: 4px 0;
+  font-size: 14px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.inv-tot-balance {
+  font-weight: 800;
+  font-size: 12.5px;
+}
+
+.inv-sign-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.inv-sign-block {
+  text-align: center;
+  width: 140px;
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.inv-sign-line {
+  border-bottom: 1px solid #94a3b8;
+  margin-bottom: 4px;
+}
+
 @media print {
   @page {
     size: 80mm auto;
     margin: 0;
+  }
+
+  @page invoice-page {
+    size: 5in 7in;
+    margin: 3mm 4mm;
+  }
+
+  /* When printing in 5x7 inches formal invoice mode */
+  body.print-formal-invoice {
+    page: invoice-page;
+    width: 5in !important;
+    max-width: 5in !important;
+    height: 7in !important;
+    max-height: 7in !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    overflow: hidden !important;
+  }
+
+  body.print-formal-invoice #receipt.formal-invoice {
+    page: invoice-page;
+    width: 5in !important;
+    max-width: 5in !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+  }
+
+  body.print-formal-invoice .invoice-container {
+    padding: 5mm 6mm !important;
   }
 
   html,

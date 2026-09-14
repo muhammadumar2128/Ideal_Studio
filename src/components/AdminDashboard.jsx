@@ -99,7 +99,8 @@ export default function AdminDashboard({
   onOpenDrawer,
   onDrawerAdjustment,
   onCloseDrawer,
-  onDeleteDrawerHistory
+  onDeleteDrawerHistory,
+  onChangeAdminPassword
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
@@ -132,6 +133,46 @@ export default function AdminDashboard({
   const [filterStaff, setFilterStaff] = useState('');
   const [filterDay, setFilterDay] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+
+  // Admin password change state
+  const [newAdminPass, setNewAdminPass] = useState('');
+  const [confirmAdminPass, setConfirmAdminPass] = useState('');
+  const [showPassText, setShowPassText] = useState(false);
+  const [passFeedback, setPassFeedback] = useState(null);
+  const [isSavingPass, setIsSavingPass] = useState(false);
+
+  const handleUpdateAdminPassword = async (e) => {
+    e.preventDefault();
+    setPassFeedback(null);
+
+    const cleanPass = newAdminPass.trim();
+    if (!cleanPass) {
+      setPassFeedback({ type: 'error', text: 'Password cannot be empty.' });
+      return;
+    }
+    if (cleanPass.length < 4) {
+      setPassFeedback({ type: 'error', text: 'Password must be at least 4 characters long.' });
+      return;
+    }
+    if (cleanPass !== confirmAdminPass.trim()) {
+      setPassFeedback({ type: 'error', text: 'Passwords do not match. Please re-enter identical passwords.' });
+      return;
+    }
+
+    setIsSavingPass(true);
+    try {
+      if (onChangeAdminPassword) {
+        await onChangeAdminPassword(cleanPass);
+      }
+      setPassFeedback({ type: 'success', text: 'Admin password updated and saved successfully!' });
+      setNewAdminPass('');
+      setConfirmAdminPass('');
+    } catch (err) {
+      setPassFeedback({ type: 'error', text: 'Failed to update password. Please check connection.' });
+    } finally {
+      setIsSavingPass(false);
+    }
+  };
 
   // Calculated Metrics
   const salesList = state.sales || [];
@@ -465,9 +506,19 @@ export default function AdminDashboard({
               Real-time sales revenue, expense tracking, net profit, and historical monthly archives.
             </div>
           </div>
-          <button className="btn danger sm" onClick={onLogout} style={{ borderRadius: '8px' }}>
-            🔒 Sign Out Admin
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="btn ghost sm"
+              onClick={() => setAdminTab('system')}
+              style={{ borderRadius: '8px', color: '#E2E8F0', borderColor: 'rgba(255,255,255,0.25)', fontSize: '12.5px' }}
+              title="Change master admin panel password"
+            >
+              🔑 Change Password
+            </button>
+            <button className="btn danger sm" onClick={onLogout} style={{ borderRadius: '8px', fontSize: '12.5px' }}>
+              🔒 Sign Out Admin
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1657,6 +1708,87 @@ export default function AdminDashboard({
       {/* TAB 6: SYSTEM & BACKUP */}
       {adminTab === 'system' && (
         <div className="grid">
+          {/* ADMIN PASSWORD & ACCESS CONTROL */}
+          <div className="card" style={{ border: '2px solid rgba(37, 99, 235, 0.2)' }}>
+            <h2>
+              <span>🔐 Admin Password &amp; Security</span>
+              <span className="badge" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>Master Auth</span>
+            </h2>
+            <div className="body stack">
+              <p className="hint" style={{ marginTop: 0 }}>
+                Change the master password used to log in to this Executive Admin Panel. This password syncs securely to cloud.
+              </p>
+
+              <form onSubmit={handleUpdateAdminPassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>New Admin Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassText ? 'text' : 'password'}
+                      placeholder="Enter new password (min. 4 characters)"
+                      value={newAdminPass}
+                      onChange={(e) => setNewAdminPass(e.target.value)}
+                      required
+                      style={{ paddingRight: '45px', width: '100%' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassText(!showPassText)}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '15px',
+                        color: 'var(--muted)',
+                        padding: '4px 6px'
+                      }}
+                      title={showPassText ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassText ? '🙈' : '👁️'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '13px', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Confirm New Password</label>
+                  <input
+                    type={showPassText ? 'text' : 'password'}
+                    placeholder="Confirm new password"
+                    value={confirmAdminPass}
+                    onChange={(e) => setConfirmAdminPass(e.target.value)}
+                    required
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                {passFeedback && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    background: passFeedback.type === 'error' ? 'var(--danger-soft)' : '#ECFDF5',
+                    color: passFeedback.type === 'error' ? 'var(--danger)' : '#047857',
+                    border: passFeedback.type === 'error' ? '1px solid rgba(220, 38, 38, 0.2)' : '1px solid rgba(16, 185, 129, 0.3)'
+                  }}>
+                    {passFeedback.type === 'error' ? '⚠️ ' : '✅ '}
+                    {passFeedback.text}
+                  </div>
+                )}
+
+                <div style={{ marginTop: '4px' }}>
+                  <button className="btn primary block" type="submit" disabled={isSavingPass}>
+                    {isSavingPass ? 'Saving to Cloud...' : '💾 Save New Admin Password'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
           <div className="card">
             <h2>Data Backup &amp; Export</h2>
             <div className="body stack">
