@@ -845,7 +845,8 @@ tbody tr.row-void:hover {
   .wrap,
   header.top,
   nav.tabs,
-  .rc-actions {
+  .rc-actions,
+  .no-print {
     display: none !important;
   }
 

@@ -472,7 +472,7 @@ export default function App() {
   };
 
   // Handle saving new sale from Team POS
-  const handleSaveSaleFromTeam = async ({ cart, selStaff, fCust, fPhone, cartTotal, paidVal, cartBalance, payMethod }) => {
+  const handleSaveSaleFromTeam = async ({ cart, selStaff, fCust, fPhone, cartTotal, paidVal, cartBalance, payMethod, saleDate }) => {
     // Ensure nextCounter is strictly higher than any known sale
     const maxExistingSaleNum = (state.sales || []).reduce((max, s) => {
       if (s.id && typeof s.id === 'string' && s.id.startsWith('R-')) {
@@ -486,9 +486,21 @@ export default function App() {
     const chosenPayMethod = payMethod || 'Cash';
     const itemsWithPayMethod = cart.map((it, i) => i === 0 ? { ...it, payMethod: chosenPayMethod } : it);
 
+    let saleTimestamp = Date.now();
+    if (saleDate) {
+      if (typeof saleDate === 'string' && saleDate.includes('-')) {
+        const [y, m, d] = saleDate.split('-').map(Number);
+        const now = new Date();
+        const customD = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+        saleTimestamp = customD.getTime();
+      } else if (!isNaN(Number(saleDate))) {
+        saleTimestamp = Number(saleDate);
+      }
+    }
+
     let newSale = {
       id: "R-" + pad(nextCounter),
-      ts: Date.now(),
+      ts: saleTimestamp,
       staff: selStaff,
       customer: fCust.trim(),
       phone: fPhone.trim(),
@@ -503,7 +515,7 @@ export default function App() {
       ...state,
       counter: nextCounter,
       lastStaff: selStaff,
-      sales: [newSale, ...state.sales]
+      sales: [newSale, ...state.sales].sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
     };
     setState(nextState);
     setActiveModalSale(newSale);
@@ -688,6 +700,33 @@ export default function App() {
           .eq('id', saleId);
       } catch (err) {
         console.error('Error deleting sale in Supabase:', err);
+      }
+    }
+  };
+
+  // Handle Update Receipt Date (Backdate or change bill date)
+  const handleUpdateSaleDate = async (saleId, newDateStr) => {
+    if (!saleId || !newDateStr) return;
+    const [y, m, d] = newDateStr.split('-').map(Number);
+    if (isNaN(y) || isNaN(m) || isNaN(d)) {
+      alert("Invalid date format. Please use YYYY-MM-DD.");
+      return;
+    }
+    const now = new Date();
+    const updatedTs = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).getTime();
+
+    setState(prev => ({
+      ...prev,
+      sales: prev.sales.map(s => s.id === saleId ? { ...s, ts: updatedTs } : s).sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
+    }));
+
+    setActiveModalSale(prev => (prev && prev.id === saleId ? { ...prev, ts: updatedTs } : prev));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').update({ ts: updatedTs }).eq('id', saleId);
+      } catch (err) {
+        console.error('Error updating sale date in Supabase:', err);
       }
     }
   };
@@ -1218,6 +1257,21 @@ export default function App() {
                 🗑️ Delete
               </button>
             )}
+            <button
+              className="btn ghost"
+              style={{ flex: 1, borderColor: '#D97706', color: '#B45309' }}
+              onClick={() => {
+                const curr = new Date(activeModalSale.ts);
+                const currYMD = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}-${String(curr.getDate()).padStart(2, '0')}`;
+                const newD = window.prompt(`Change bill date for receipt ${activeModalSale.id} (YYYY-MM-DD):\n\nEnter previous or custom date:`, currYMD);
+                if (newD && newD.trim() && newD.trim() !== currYMD) {
+                  handleUpdateSaleDate(activeModalSale.id, newD.trim());
+                }
+              }}
+              title="Change receipt date to previous or custom date"
+            >
+              📅 Change Date
+            </button>
             <button className="btn ghost" style={{ flex: 1 }} onClick={() => setActiveModalSale(null)}>
               Close
             </button>

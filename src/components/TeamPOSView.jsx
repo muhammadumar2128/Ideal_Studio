@@ -22,6 +22,14 @@ function isSameDay(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 }
 
+function getTodayDateStr() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getSaleTotals(s) {
   const items = s.items || [];
   const grossTotal = items.filter(it => it.cat !== 'Discount' && Number(it.price) > 0).reduce((sum, it) => sum + (Number(it.price) * Number(it.qty || 1)), 0);
@@ -93,6 +101,7 @@ export default function TeamPOSView({
   const [fPhone, setFPhone] = useState('');
   const [fPaid, setFPaid] = useState('');
   const [payMethod, setPayMethod] = useState('Cash'); // 'Cash' or 'Online'
+  const [saleDate, setSaleDate] = useState(''); // '' means Today/Now, or 'YYYY-MM-DD' for previous date
 
   // Discount state (Always-visible field for staff when customer asks for discount)
   const [discountVal, setDiscountVal] = useState('');
@@ -327,7 +336,8 @@ export default function TeamPOSView({
         cartTotal,
         paidVal,
         cartBalance,
-        payMethod
+        payMethod,
+        saleDate: saleDate || null
       });
       setCart([]);
       setFCust('');
@@ -335,6 +345,7 @@ export default function TeamPOSView({
       setFPaid('');
       setPayMethod('Cash');
       setDiscountVal('');
+      setSaleDate('');
     } finally {
       setTimeout(() => setIsSubmittingSale(false), 500);
     }
@@ -360,7 +371,7 @@ export default function TeamPOSView({
     }
   };
 
-  // Records filtering (Staff view limited to last 3 days)
+  // Records filtering (Staff view limited to last 3 days unless searching)
   const now = new Date();
   const threeDaysAgo = new Date();
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
@@ -369,9 +380,11 @@ export default function TeamPOSView({
   const salesList = state.sales || [];
   const expensesList = state.expenses || [];
 
-  // Staff POS view is restricted to past 3 days of records
+  // Staff POS view is restricted to past 3 days of records unless actively searching or viewing active modal
   const recentSalesList = salesList.filter(s => {
     const d = new Date(s.ts);
+    if (searchBox && searchBox.trim()) return true;
+    if (activeModalSale && s.id === activeModalSale.id) return true;
     return d >= threeDaysAgo;
   });
 
@@ -875,6 +888,48 @@ export default function TeamPOSView({
 
               <div className="row r2">
                 <div className="field">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ margin: 0, fontWeight: saleDate && saleDate !== getTodayDateStr() ? 700 : undefined, color: saleDate && saleDate !== getTodayDateStr() ? '#D97706' : undefined }}>
+                      📅 Bill / Receipt Date
+                    </label>
+                    {saleDate && saleDate !== getTodayDateStr() && (
+                      <button
+                        type="button"
+                        onClick={() => setSaleDate('')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--primary)',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          padding: 0,
+                          textDecoration: 'underline',
+                          fontWeight: 600
+                        }}
+                        title="Reset to today's date"
+                      >
+                        Reset Today
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="date"
+                    value={saleDate || getTodayDateStr()}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                    style={{
+                      borderColor: saleDate && saleDate !== getTodayDateStr() ? '#F59E0B' : undefined,
+                      background: saleDate && saleDate !== getTodayDateStr() ? '#FFFBEB' : undefined,
+                      fontWeight: saleDate && saleDate !== getTodayDateStr() ? 700 : undefined,
+                      color: saleDate && saleDate !== getTodayDateStr() ? '#92400E' : undefined
+                    }}
+                  />
+                  {saleDate && saleDate !== getTodayDateStr() && (
+                    <div style={{ fontSize: '11.5px', color: '#B45309', marginTop: '3px', fontWeight: 600 }}>
+                      🕒 Previous date selected: {new Date(saleDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </div>
+                  )}
+                </div>
+                <div className="field">
                   <label style={{ color: manualDiscountAmount > 0 ? '#DC2626' : undefined, fontWeight: 700 }}>
                     🏷️ Discount Amount (optional)
                   </label>
@@ -899,6 +954,9 @@ export default function TeamPOSView({
                     </select>
                   </div>
                 </div>
+              </div>
+
+              <div className="row r2">
                 <div className="field">
                   <label>Paid Amount ({CUR})</label>
                   <input
@@ -911,14 +969,11 @@ export default function TeamPOSView({
                     onChange={(e) => setFPaid(e.target.value)}
                   />
                 </div>
-              </div>
-
-              <div className="row r1" style={{ marginTop: '8px' }}>
                 <div className="field">
                   <label>Remaining Balance</label>
                   <div
                     className="preview-price mono"
-                    style={{ color: rawBalance > 0 ? 'var(--danger)' : 'var(--emerald)' }}
+                    style={{ color: rawBalance > 0 ? 'var(--danger)' : 'var(--emerald)', marginTop: '2px' }}
                   >
                     {money(cartBalance)}
                   </div>
@@ -942,6 +997,7 @@ export default function TeamPOSView({
                     setFCust('');
                     setFPhone('');
                     setFPaid('');
+                    setSaleDate('');
                   }}
                 >
                   Clear Receipt
