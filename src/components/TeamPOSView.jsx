@@ -380,11 +380,10 @@ export default function TeamPOSView({
   const salesList = state.sales || [];
   const expensesList = state.expenses || [];
 
-  // Staff POS view is restricted to past 3 days of records unless actively searching or viewing active modal
+  // Staff POS view is restricted to past 3 days of records unless actively searching
   const recentSalesList = salesList.filter(s => {
     const d = new Date(s.ts);
     if (searchBox && searchBox.trim()) return true;
-    if (activeModalSale && s.id === activeModalSale.id) return true;
     return d >= threeDaysAgo;
   });
 
