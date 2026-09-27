@@ -68,11 +68,52 @@ export default function TeamPOSView({
   isAdminLoggedIn,
   onOpenDrawer,
   onDrawerAdjustment,
-  onCloseDrawer
+  onCloseDrawer,
+  onClockIn,
+  onToggleBreak,
+  onClockOut,
+  onAuthorizeTerminal
 }) {
-  const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses', 'drawer'
+  const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses', 'attendance'
   const [cart, setCart] = useState([]);
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+
+  // Attendance state
+  const [attStaff, setAttStaff] = useState(state.lastStaff || (state.staff[0] || 'Umar'));
+  const [attNote, setAttNote] = useState('');
+  const [attTicker, setAttTicker] = useState(Date.now());
+  const [terminalAuthToken, setTerminalAuthToken] = useState(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('ideal_studio_counter_terminal_token') : null;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => setAttTicker(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const isTerminalAuthorized = (terminalAuthToken === (state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026')) || isAdminLoggedIn;
+
+  const todayDateStr = getTodayDateStr();
+  const todayAttendance = (state.attendance || []).filter(a => a.date === todayDateStr);
+  const activeAttendanceCount = todayAttendance.filter(a => a.status === 'clocked_in' || a.status === 'on_break').length;
+
+  const currentStaffPunch = todayAttendance.find(a => a.staff === attStaff && (a.status === 'clocked_in' || a.status === 'on_break'));
+  const completedStaffPunches = todayAttendance.filter(a => a.staff === attStaff && a.status === 'completed');
+
+  const formatMinStr = (min) => {
+    const m = Math.max(0, Math.round(min || 0));
+    const hrs = Math.floor(m / 60);
+    const rem = m % 60;
+    if (hrs > 0 && rem > 0) return `${hrs}h ${rem}m`;
+    if (hrs > 0) return `${hrs}h`;
+    return `${rem}m`;
+  };
+
+  const formatPunchTime = (ts) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
 
   // Compute dynamic PP count list from state
   const PP = Array.from(new Set([
@@ -619,6 +660,13 @@ export default function TeamPOSView({
           </button>
           <button className={teamTab === 'expenses' ? 'active' : ''} onClick={() => setTeamTab('expenses')}>
             💸 Log Daily Expense
+          </button>
+          <button className={teamTab === 'attendance' ? 'active' : ''} onClick={() => setTeamTab('attendance')}>
+            ⏱️ Staff Attendance {activeAttendanceCount > 0 && (
+              <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', fontWeight: 800 }}>
+                🟢 {activeAttendanceCount} on Shift
+              </span>
+            )}
           </button>
         </nav>
 
@@ -1286,6 +1334,379 @@ export default function TeamPOSView({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB 4: STAFF ATTENDANCE & SHIFT CLOCK-IN/OUT */}
+      {teamTab === 'attendance' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* TERMINAL STATUS BAR */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 18px',
+              borderRadius: '12px',
+              border: isTerminalAuthorized ? '1px solid #10B981' : '1px solid #EF4444',
+              background: isTerminalAuthorized ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '20px' }}>{isTerminalAuthorized ? '🖥️' : '🔒'}</span>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '14px', color: isTerminalAuthorized ? '#059669' : '#DC2626' }}>
+                  {isTerminalAuthorized
+                    ? 'Official Studio Counter Terminal · Authorized'
+                    : 'Terminal Not Authorized for Attendance'}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                  Shop # 45, Post Office Market HIT, Taxila Cantt · Anti-Proxy Attendance Lock Active
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>
+                📅 {new Date(attTicker).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · {new Date(attTicker).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+              </div>
+
+              {!isTerminalAuthorized && (
+                isAdminLoggedIn ? (
+                  <button
+                    type="button"
+                    className="btn primary sm"
+                    style={{ background: '#10B981', borderColor: '#10B981' }}
+                    onClick={() => {
+                      if (onAuthorizeTerminal) {
+                        onAuthorizeTerminal();
+                        setTerminalAuthToken(state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026');
+                        alert("✅ This computer has been authorized as the official Studio Counter Terminal!");
+                      }
+                    }}
+                  >
+                    🖥️ Authorize This PC
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{ color: '#2563EB', borderColor: '#BFDBFE' }}
+                    onClick={onOpenAdminLogin}
+                  >
+                    🔑 Admin Login to Authorize
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          {!isTerminalAuthorized ? (
+            /* IF DEVICE IS NOT AUTHORIZED: PREVENT PROXY ATTENDANCE FROM HOME */
+            <div className="card" style={{ maxWidth: '640px', margin: '30px auto', textAlign: 'center', border: '2px solid #EF4444' }}>
+              <div className="body" style={{ padding: '36px 24px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '14px' }}>🔒</div>
+                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 10px', color: '#DC2626' }}>
+                  Attendance Punch Restricted to Shop Counter PC
+                </h2>
+                <p style={{ color: 'var(--muted)', fontSize: '14px', lineHeight: 1.6, margin: '0 0 20px' }}>
+                  To maintain genuine studio timesheets and prevent remote clock-in from home or personal mobile phones, attendance can only be recorded on the official <strong>Studio Counter Terminal</strong>.
+                </p>
+                <div style={{ background: 'var(--paper)', padding: '14px', borderRadius: '10px', fontSize: '13px', color: 'var(--ink)', marginBottom: '22px' }}>
+                  📌 <strong>Are you on the shop counter computer?</strong><br />
+                  Log in as Admin once to click <em>"Authorize This Computer as Counter Attendance Terminal"</em>.
+                </div>
+                {isAdminLoggedIn ? (
+                  <button
+                    type="button"
+                    className="btn primary"
+                    style={{ background: '#10B981', borderColor: '#10B981', padding: '10px 24px', fontWeight: 700 }}
+                    onClick={() => {
+                      if (onAuthorizeTerminal) {
+                        onAuthorizeTerminal();
+                        setTerminalAuthToken(state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026');
+                        alert("✅ This computer has been authorized as the official Studio Counter Terminal!");
+                      }
+                    }}
+                  >
+                    🖥️ Authorize This Computer Now
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn primary"
+                    style={{ padding: '10px 24px', fontWeight: 700 }}
+                    onClick={onOpenAdminLogin}
+                  >
+                    🔑 Admin Login to Authorize
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* IF AUTHORIZED: RENDER FULL ATTENDANCE CONTROLS & ROSTER */
+            <div className="grid">
+              
+              {/* LEFT COLUMN: EMPLOYEE SHIFT PUNCH CARD */}
+              <div className="card">
+                <h2>
+                  <span>⏱️ Employee Shift Punch</span>
+                  <span className="badge" style={{ background: '#EFF6FF', color: '#2563EB' }}>
+                    Live Punch Station
+                  </span>
+                </h2>
+                <div className="body stack">
+                  
+                  {/* STAFF SELECTOR */}
+                  <div className="field">
+                    <label>Select Staff Member</label>
+                    <select
+                      value={attStaff}
+                      onChange={(e) => setAttStaff(e.target.value)}
+                      style={{ fontSize: '16px', fontWeight: 800, padding: '10px 14px' }}
+                    >
+                      {state.staff.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* CURRENT STATUS CARD FOR SELECTED STAFF */}
+                  <div
+                    style={{
+                      padding: '16px',
+                      borderRadius: '12px',
+                      background: 'var(--paper)',
+                      border: '1px solid var(--line)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--muted)' }}>
+                        Current Status
+                      </span>
+                      {currentStaffPunch ? (
+                        currentStaffPunch.status === 'on_break' ? (
+                          <span className="badge" style={{ background: '#FEF3C7', color: '#D97706', fontWeight: 800 }}>
+                            ☕ On Break
+                          </span>
+                        ) : (
+                          <span className="badge" style={{ background: '#ECFDF5', color: '#059669', fontWeight: 800 }}>
+                            🟢 Shift Active (Working)
+                          </span>
+                        )
+                      ) : (
+                        <span className="badge" style={{ background: 'var(--line-soft)', color: 'var(--muted)' }}>
+                          ⚪ Not Clocked In
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: '17px', fontWeight: 800, color: 'var(--ink)' }}>
+                      {attStaff}
+                    </div>
+
+                    {currentStaffPunch && (
+                      <div style={{ marginTop: '10px', fontSize: '13.5px' }}>
+                        <div>
+                          ⏰ Clock In: <strong>{formatPunchTime(currentStaffPunch.clockIn)}</strong>
+                        </div>
+                        {currentStaffPunch.status === 'clocked_in' && (
+                          <div style={{ marginTop: '4px', color: '#059669', fontWeight: 700 }}>
+                            ⏱️ Working Time: {formatMinStr((attTicker - currentStaffPunch.clockIn) / 60000)}
+                          </div>
+                        )}
+                        {currentStaffPunch.status === 'on_break' && (
+                          <div style={{ marginTop: '4px', color: '#D97706', fontWeight: 700 }}>
+                            ☕ On Break for: {formatMinStr((attTicker - (currentStaffPunch.breaks?.slice(-1)[0]?.start || currentStaffPunch.clockIn)) / 60000)}
+                          </div>
+                        )}
+                        {currentStaffPunch.notes && (
+                          <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic' }}>
+                            "{currentStaffPunch.notes}"
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SHIFT ACTIONS */}
+                  {!currentStaffPunch ? (
+                    /* CASE 1: NOT CLOCKED IN YET */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div className="field">
+                        <label>Shift Notes (optional)</label>
+                        <input
+                          placeholder="e.g. Morning counter shift"
+                          value={attNote}
+                          onChange={(e) => setAttNote(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn primary block"
+                        style={{ height: '48px', fontSize: '16px', fontWeight: 800, background: '#10B981', borderColor: '#10B981' }}
+                        onClick={async () => {
+                          if (onClockIn) {
+                            await onClockIn({ staff: attStaff, note: attNote });
+                            setAttNote('');
+                          }
+                        }}
+                      >
+                        🟢 Clock In Shift for {attStaff}
+                      </button>
+
+                      {completedStaffPunches.length > 0 && (
+                        <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
+                          ℹ️ {attStaff} has already completed {completedStaffPunches.length} shift(s) today ({completedStaffPunches.map(p => formatMinStr(p.totalWorkMinutes)).join(', ')}).
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* CASE 2: SHIFT ACTIVE (EITHER CLOCKED IN OR ON BREAK) */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div className="field">
+                        <label>Clock Out / Break Notes (optional)</label>
+                        <input
+                          placeholder="e.g. Finished evening shift"
+                          value={attNote}
+                          onChange={(e) => setAttNote(e.target.value)}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        {currentStaffPunch.status === 'clocked_in' ? (
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            style={{ flex: 1, borderColor: '#D97706', color: '#D97706', fontWeight: 700 }}
+                            onClick={async () => {
+                              if (onToggleBreak) {
+                                await onToggleBreak(currentStaffPunch.id, attNote || 'Tea Break');
+                                setAttNote('');
+                              }
+                            }}
+                          >
+                            ☕ Take Break
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn primary"
+                            style={{ flex: 1, background: '#2563EB', borderColor: '#2563EB', fontWeight: 700 }}
+                            onClick={async () => {
+                              if (onToggleBreak) {
+                                await onToggleBreak(currentStaffPunch.id);
+                                setAttNote('');
+                              }
+                            }}
+                          >
+                            ▶️ Resume Shift
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          className="btn primary"
+                          style={{ flex: 1, background: '#DC2626', borderColor: '#DC2626', fontWeight: 800 }}
+                          onClick={async () => {
+                            const elapsed = Math.round((Date.now() - currentStaffPunch.clockIn) / 60000);
+                            const confirmMsg = `Confirm Clock Out for ${attStaff}?\n\n• Clock In: ${formatPunchTime(currentStaffPunch.clockIn)}\n• Shift Time: approx ${formatMinStr(elapsed)}\n\nEnd shift now?`;
+                            if (!window.confirm(confirmMsg)) return;
+
+                            if (onClockOut) {
+                              await onClockOut(currentStaffPunch.id, attNote);
+                              setAttNote('');
+                            }
+                          }}
+                        >
+                          🔴 Clock Out Shift
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: TODAY'S STUDIO ROSTER */}
+              <div className="card">
+                <h2>
+                  <span>📋 Today's Studio Attendance Roster</span>
+                  <span className="badge">{todayAttendance.length} punch(es)</span>
+                </h2>
+                <div className="body">
+                  {!todayAttendance.length ? (
+                    <div className="empty-state">No attendance recorded today yet.</div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Staff</th>
+                            <th>In</th>
+                            <th>Out</th>
+                            <th>Worked</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {todayAttendance.map((rec) => {
+                            const isLive = rec.status === 'clocked_in' || rec.status === 'on_break';
+                            const liveMinutes = isLive ? Math.max(0, Math.round((attTicker - rec.clockIn) / 60000)) : rec.totalWorkMinutes;
+
+                            return (
+                              <tr key={rec.id}>
+                                <td>
+                                  <div style={{ fontWeight: 700 }}>{rec.staff}</div>
+                                  {rec.notes && (
+                                    <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                                      {rec.notes}
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ fontSize: '13px' }}>{formatPunchTime(rec.clockIn)}</td>
+                                <td style={{ fontSize: '13px' }}>{rec.clockOut ? formatPunchTime(rec.clockOut) : '—'}</td>
+                                <td className="mono" style={{ fontWeight: 700 }}>
+                                  {formatMinStr(liveMinutes)}
+                                </td>
+                                <td>
+                                  {rec.status === 'clocked_in' && (
+                                    <span className="badge" style={{ background: '#ECFDF5', color: '#059669', fontWeight: 800 }}>
+                                      🟢 On Shift
+                                    </span>
+                                  )}
+                                  {rec.status === 'on_break' && (
+                                    <span className="badge" style={{ background: '#FEF3C7', color: '#D97706', fontWeight: 800 }}>
+                                      ☕ On Break
+                                    </span>
+                                  )}
+                                  {rec.status === 'completed' && (
+                                    <span className="badge" style={{ background: 'var(--line-soft)', color: 'var(--muted)' }}>
+                                      🏁 Completed
+                                    </span>
+                                  )}
+                                  {rec.status === 'leave' && (
+                                    <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626' }}>
+                                      🏖️ Leave
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+
         </div>
       )}
 

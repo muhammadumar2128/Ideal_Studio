@@ -58,7 +58,9 @@ function getDefaults() {
     misc,
     expenses: [],
     activeDrawerSession: null,
-    drawerHistory: []
+    drawerHistory: [],
+    attendance: [],
+    terminalKey: "IPS-TAXILA-COUNTER-KEY-2026"
   };
 }
 
@@ -180,6 +182,7 @@ export default function App() {
               const normalSales = [];
               const expList = [];
               const drawerList = [];
+              const attendanceList = [];
 
               salesRes.data.forEach(s => {
                 if (s.id && typeof s.id === 'string' && s.id.startsWith('R-')) {
@@ -192,9 +195,20 @@ export default function App() {
                 const isExp = s.customer === '__EXPENSE__' || (s.id && String(s.id).startsWith('EXP-'));
                 const isDrawer = s.customer === '__DRAWER_SESSION__' || (s.id && String(s.id).startsWith('DRAWER-'));
                 const isConfig = s.customer === '__SYSTEM_AUTH__' || s.id === 'CFG-ADMIN-AUTH';
+                const isTerminalConfig = s.customer === '__TERMINAL_AUTH__' || s.id === 'CFG-TERMINAL-AUTH';
+                const isAttendance = s.customer === '__ATTENDANCE__' || (s.id && String(s.id).startsWith('ATT-'));
+
                 if (isConfig) {
                   if (s.items && s.items[0] && s.items[0].password) {
                     updated.adminPassword = s.items[0].password;
+                  }
+                } else if (isTerminalConfig) {
+                  if (s.items && s.items[0] && s.items[0].terminalKey) {
+                    updated.terminalKey = s.items[0].terminalKey;
+                  }
+                } else if (isAttendance) {
+                  if (s.items && s.items[0]) {
+                    attendanceList.push(s.items[0]);
                   }
                 } else if (isDrawer) {
                   if (s.items && s.items[0]) {
@@ -246,6 +260,10 @@ export default function App() {
               const remoteDrawerIds = new Set(drawerList.map(d => d.id));
               const localOnlyDrawers = (prev.drawerHistory || []).filter(d => !remoteDrawerIds.has(d.id));
               updated.drawerHistory = [...drawerList, ...localOnlyDrawers].sort((a, b) => (b.closedAt || b.openedAt || 0) - (a.closedAt || a.openedAt || 0));
+
+              const remoteAttIds = new Set(attendanceList.map(a => a.id));
+              const localOnlyAtt = (prev.attendance || []).filter(a => !remoteAttIds.has(a.id));
+              updated.attendance = [...attendanceList, ...localOnlyAtt].sort((a, b) => Number(b.clockIn || b.ts || 0) - Number(a.clockIn || a.ts || 0));
             }
 
             if (settingsRes.data) {
@@ -301,10 +319,23 @@ export default function App() {
           const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
           const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
           const isConfig = row.customer === '__SYSTEM_AUTH__' || row.id === 'CFG-ADMIN-AUTH';
+          const isTerminalConfig = row.customer === '__TERMINAL_AUTH__' || row.id === 'CFG-TERMINAL-AUTH';
+          const isAttendance = row.customer === '__ATTENDANCE__' || (row.id && String(row.id).startsWith('ATT-'));
+
           if (isConfig) {
             if (row.items && row.items[0] && row.items[0].password) {
               setState(prev => ({ ...prev, adminPassword: row.items[0].password }));
             }
+          } else if (isTerminalConfig) {
+            if (row.items && row.items[0] && row.items[0].terminalKey) {
+              setState(prev => ({ ...prev, terminalKey: row.items[0].terminalKey }));
+            }
+          } else if (isAttendance) {
+            const attData = (row.items && row.items[0]) || row;
+            setState(prev => {
+              if (prev.attendance && prev.attendance.some(a => a.id === attData.id)) return prev;
+              return { ...prev, attendance: [attData, ...(prev.attendance || [])] };
+            });
           } else if (isDrawer) {
             const drawerData = (row.items && row.items[0]) || row;
             setState(prev => {
@@ -355,10 +386,23 @@ export default function App() {
           const isExp = row.customer === '__EXPENSE__' || (row.id && String(row.id).startsWith('EXP-'));
           const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
           const isConfig = row.customer === '__SYSTEM_AUTH__' || row.id === 'CFG-ADMIN-AUTH';
+          const isTerminalConfig = row.customer === '__TERMINAL_AUTH__' || row.id === 'CFG-TERMINAL-AUTH';
+          const isAttendance = row.customer === '__ATTENDANCE__' || (row.id && String(row.id).startsWith('ATT-'));
+
           if (isConfig) {
             if (row.items && row.items[0] && row.items[0].password) {
               setState(prev => ({ ...prev, adminPassword: row.items[0].password }));
             }
+          } else if (isTerminalConfig) {
+            if (row.items && row.items[0] && row.items[0].terminalKey) {
+              setState(prev => ({ ...prev, terminalKey: row.items[0].terminalKey }));
+            }
+          } else if (isAttendance) {
+            const attData = (row.items && row.items[0]) || row;
+            setState(prev => ({
+              ...prev,
+              attendance: (prev.attendance || []).map(a => a.id === row.id ? attData : a)
+            }));
           } else if (isDrawer) {
             const drawerData = (row.items && row.items[0]) || row;
             setState(prev => ({
@@ -407,7 +451,8 @@ export default function App() {
               ...prev,
               sales: prev.sales.filter(s => s.id !== oldId),
               expenses: (prev.expenses || []).filter(e => e.id !== oldId),
-              drawerHistory: (prev.drawerHistory || []).filter(d => d.id !== oldId)
+              drawerHistory: (prev.drawerHistory || []).filter(d => d.id !== oldId),
+              attendance: (prev.attendance || []).filter(a => a.id !== oldId)
             }));
           }
         }
@@ -925,6 +970,256 @@ export default function App() {
     }
   };
 
+  // ATTENDANCE & TERMINAL AUTHORIZATION HANDLERS
+  const handleAuthorizeCurrentTerminal = () => {
+    try {
+      localStorage.setItem('ideal_studio_counter_terminal_token', state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026');
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const handleRevokeCurrentTerminal = () => {
+    try {
+      localStorage.removeItem('ideal_studio_counter_terminal_token');
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const handleRegenerateTerminalKey = async () => {
+    const newKey = "IPS-TERM-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const nextState = { ...state, terminalKey: newKey };
+    setState(nextState);
+
+    // Auto-authorize the current device since admin is performing this action
+    try {
+      localStorage.setItem('ideal_studio_counter_terminal_token', newKey);
+    } catch (e) {
+      console.warn(e);
+    }
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').upsert([{
+          id: 'CFG-TERMINAL-AUTH',
+          ts: Date.now(),
+          staff: 'Admin',
+          customer: '__TERMINAL_AUTH__',
+          phone: 'Terminal Auth Config',
+          items: [{ terminalKey: newKey }],
+          total: 0,
+          paid: 0,
+          balance: 0
+        }]);
+      } catch (err) {
+        console.error('Error saving terminal auth key to Supabase:', err);
+      }
+    }
+  };
+
+  const handleClockIn = async ({ staff, note }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const newRecord = {
+      id: "ATT-" + Date.now(),
+      ts: Date.now(),
+      staff,
+      date: today,
+      clockIn: Date.now(),
+      clockOut: null,
+      breaks: [],
+      totalWorkMinutes: 0,
+      status: 'clocked_in',
+      notes: (note || '').trim(),
+      isManual: false
+    };
+
+    const nextAttendance = [newRecord, ...(state.attendance || [])];
+    setState(prev => ({ ...prev, attendance: nextAttendance }));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').insert([{
+          id: newRecord.id,
+          ts: newRecord.ts,
+          staff: newRecord.staff,
+          customer: '__ATTENDANCE__',
+          phone: newRecord.date,
+          items: [newRecord],
+          total: 0,
+          paid: 0,
+          balance: 0
+        }]);
+      } catch (err) {
+        console.error('Error inserting attendance to Supabase:', err);
+      }
+    }
+    return newRecord;
+  };
+
+  const handleToggleBreak = async (attendanceId, note) => {
+    const current = (state.attendance || []).find(a => a.id === attendanceId);
+    if (!current) return;
+
+    let updatedBreaks = Array.isArray(current.breaks) ? [...current.breaks] : [];
+    let updatedStatus = current.status;
+
+    if (current.status === 'clocked_in') {
+      // Start break
+      updatedBreaks.push({
+        start: Date.now(),
+        end: null,
+        note: (note || '').trim()
+      });
+      updatedStatus = 'on_break';
+    } else if (current.status === 'on_break') {
+      // Resume shift (close open break)
+      updatedBreaks = updatedBreaks.map(b => {
+        if (!b.end) {
+          const endTs = Date.now();
+          const dur = Math.max(1, Math.round((endTs - b.start) / 60000));
+          return { ...b, end: endTs, durationMin: dur };
+        }
+        return b;
+      });
+      updatedStatus = 'clocked_in';
+    }
+
+    const updatedRecord = {
+      ...current,
+      breaks: updatedBreaks,
+      status: updatedStatus,
+      updatedAt: Date.now()
+    };
+
+    const nextAttendance = (state.attendance || []).map(a => a.id === attendanceId ? updatedRecord : a);
+    setState(prev => ({ ...prev, attendance: nextAttendance }));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').update({
+          ts: updatedRecord.ts,
+          items: [updatedRecord]
+        }).eq('id', attendanceId);
+      } catch (err) {
+        console.error('Error updating break status in Supabase:', err);
+      }
+    }
+  };
+
+  const handleClockOut = async (attendanceId, note) => {
+    const current = (state.attendance || []).find(a => a.id === attendanceId);
+    if (!current) return;
+
+    const clockOutTs = Date.now();
+    let updatedBreaks = Array.isArray(current.breaks) ? [...current.breaks] : [];
+
+    // Close any open break
+    updatedBreaks = updatedBreaks.map(b => {
+      if (!b.end) {
+        const dur = Math.max(1, Math.round((clockOutTs - b.start) / 60000));
+        return { ...b, end: clockOutTs, durationMin: dur };
+      }
+      return b;
+    });
+
+    const totalElapsedMinutes = Math.max(0, Math.round((clockOutTs - current.clockIn) / 60000));
+    const totalBreakMinutes = updatedBreaks.reduce((sum, b) => sum + (Number(b.durationMin) || 0), 0);
+    const totalWorkMinutes = Math.max(0, totalElapsedMinutes - totalBreakMinutes);
+
+    const updatedNotes = note ? (current.notes ? `${current.notes} · ${note}` : note) : (current.notes || '');
+
+    const updatedRecord = {
+      ...current,
+      clockOut: clockOutTs,
+      breaks: updatedBreaks,
+      totalWorkMinutes,
+      status: 'completed',
+      notes: updatedNotes,
+      updatedAt: clockOutTs
+    };
+
+    const nextAttendance = (state.attendance || []).map(a => a.id === attendanceId ? updatedRecord : a);
+    setState(prev => ({ ...prev, attendance: nextAttendance }));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').update({
+          ts: updatedRecord.ts,
+          items: [updatedRecord]
+        }).eq('id', attendanceId);
+      } catch (err) {
+        console.error('Error updating clock-out in Supabase:', err);
+      }
+    }
+  };
+
+  const handleSaveManualAttendance = async (recordData) => {
+    const isNew = !recordData.id || !state.attendance.some(a => a.id === recordData.id);
+    const recId = recordData.id || ("ATT-" + Date.now());
+
+    let workMin = Number(recordData.totalWorkMinutes || 0);
+    if (recordData.clockIn && recordData.clockOut && recordData.clockOut > recordData.clockIn) {
+      const elapsed = Math.round((recordData.clockOut - recordData.clockIn) / 60000);
+      const breakMin = (recordData.breaks || []).reduce((s, b) => s + (Number(b.durationMin) || 0), 0);
+      workMin = Math.max(0, elapsed - breakMin);
+    }
+
+    const finalRecord = {
+      ...recordData,
+      id: recId,
+      ts: recordData.ts || recordData.clockIn || Date.now(),
+      totalWorkMinutes: workMin,
+      isManual: true,
+      updatedAt: Date.now()
+    };
+
+    let nextAttendance;
+    if (isNew) {
+      nextAttendance = [finalRecord, ...(state.attendance || [])];
+    } else {
+      nextAttendance = (state.attendance || []).map(a => a.id === recId ? finalRecord : a);
+    }
+
+    setState(prev => ({ ...prev, attendance: nextAttendance }));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').upsert([{
+          id: finalRecord.id,
+          ts: finalRecord.ts,
+          staff: finalRecord.staff,
+          customer: '__ATTENDANCE__',
+          phone: finalRecord.date,
+          items: [finalRecord],
+          total: 0,
+          paid: 0,
+          balance: 0
+        }]);
+      } catch (err) {
+        console.error('Error saving manual attendance to Supabase:', err);
+      }
+    }
+  };
+
+  const handleDeleteAttendance = async (attendanceId) => {
+    if (!window.confirm("Permanently delete this attendance record?")) return;
+    const nextAttendance = (state.attendance || []).filter(a => a.id !== attendanceId);
+    setState(prev => ({ ...prev, attendance: nextAttendance }));
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').delete().eq('id', attendanceId);
+      } catch (err) {
+        console.error('Error deleting attendance record in Supabase:', err);
+      }
+    }
+  };
+
   // Export & Backup handlers
   const downloadFile = (fileName, content, type) => {
     const blob = new Blob([content], { type });
@@ -1159,6 +1454,10 @@ export default function App() {
           onOpenDrawer={handleOpenDrawer}
           onDrawerAdjustment={handleDrawerAdjustment}
           onCloseDrawer={handleCloseDrawer}
+          onClockIn={handleClockIn}
+          onToggleBreak={handleToggleBreak}
+          onClockOut={handleClockOut}
+          onAuthorizeTerminal={handleAuthorizeCurrentTerminal}
         />
       ) : (
         <AdminDashboard
@@ -1181,6 +1480,14 @@ export default function App() {
           onCloseDrawer={handleCloseDrawer}
           onDeleteDrawerHistory={handleDeleteDrawerHistory}
           onChangeAdminPassword={handleChangeAdminPassword}
+          onClockIn={handleClockIn}
+          onToggleBreak={handleToggleBreak}
+          onClockOut={handleClockOut}
+          onSaveManualAttendance={handleSaveManualAttendance}
+          onDeleteAttendance={handleDeleteAttendance}
+          onAuthorizeTerminal={handleAuthorizeCurrentTerminal}
+          onRevokeTerminal={handleRevokeCurrentTerminal}
+          onRegenerateTerminalKey={handleRegenerateTerminalKey}
         />
       )}
 

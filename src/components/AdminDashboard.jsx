@@ -100,13 +100,47 @@ export default function AdminDashboard({
   onDrawerAdjustment,
   onCloseDrawer,
   onDeleteDrawerHistory,
-  onChangeAdminPassword
+  onChangeAdminPassword,
+  onClockIn,
+  onToggleBreak,
+  onClockOut,
+  onSaveManualAttendance,
+  onDeleteAttendance,
+  onAuthorizeTerminal,
+  onRevokeTerminal,
+  onRegenerateTerminalKey
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
   const now = new Date();
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
+
+  // Attendance and Terminal security states
+  const [attSearchBox, setAttSearchBox] = useState('');
+  const [attFilterStaff, setAttFilterStaff] = useState('');
+  const [attFilterStatus, setAttFilterStatus] = useState('');
+  const [attFilterPeriod, setAttFilterPeriod] = useState('selected_month');
+  const [selectedPunchEdit, setSelectedPunchEdit] = useState(null);
+  const [showPrintTimesheet, setShowPrintTimesheet] = useState(false);
+  const [isCurrentDeviceAuthorized, setIsCurrentDeviceAuthorized] = useState(() => {
+    return typeof window !== 'undefined' && localStorage.getItem('ideal_studio_counter_terminal_token') === (state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026');
+  });
+
+  const formatPunchTime = (ts) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
+  const formatMinStr = (min) => {
+    const m = Math.max(0, Math.round(min || 0));
+    const hrs = Math.floor(m / 60);
+    const rem = m % 60;
+    if (hrs > 0 && rem > 0) return `${hrs}h ${rem}m`;
+    if (hrs > 0) return `${hrs}h`;
+    return `${rem}m`;
+  };
 
   // Cash Drawer Shift Audit States
   const [selectedShiftSlip, setSelectedShiftSlip] = useState(null);
@@ -583,6 +617,7 @@ export default function AdminDashboard({
         </button>
         <button className={adminTab === 'prices' ? 'active' : ''} onClick={() => setAdminTab('prices')}>🏷️ Rate List &amp; Custom Services</button>
         <button className={adminTab === 'team' ? 'active' : ''} onClick={() => setAdminTab('team')}>👥 Team &amp; Staff</button>
+        <button className={adminTab === 'attendance' ? 'active' : ''} onClick={() => setAdminTab('attendance')}>⏱️ Attendance &amp; Timesheets</button>
         <button className={adminTab === 'system' ? 'active' : ''} onClick={() => setAdminTab('system')}>⚙️ System &amp; Backup</button>
       </nav>
 
@@ -1705,6 +1740,487 @@ export default function AdminDashboard({
         </div>
       )}
 
+      {/* TAB: ATTENDANCE & TIMESHEETS */}
+      {adminTab === 'attendance' && (() => {
+        const attendanceList = state.attendance || [];
+
+        // Filter attendance records based on current filters
+        const filteredAttendance = attendanceList.filter(a => {
+          if (attFilterStaff && a.staff !== attFilterStaff) return false;
+          if (attFilterStatus) {
+            if (attFilterStatus === 'active' && !(a.status === 'clocked_in' || a.status === 'on_break')) return false;
+            if (attFilterStatus === 'completed' && a.status !== 'completed') return false;
+            if (attFilterStatus === 'leave' && a.status !== 'leave') return false;
+            if (attFilterStatus === 'manual' && !a.isManual) return false;
+          }
+
+          const recDate = new Date(a.clockIn || a.ts);
+          if (attFilterPeriod === 'selected_month') {
+            const ym = a.date ? a.date.slice(0, 7) : `${recDate.getFullYear()}-${String(recDate.getMonth() + 1).padStart(2, '0')}`;
+            if (ym !== selectedMonthKey) return false;
+          } else if (attFilterPeriod === 'today') {
+            if (!isSameDay(recDate, now)) return false;
+          } else if (attFilterPeriod === 'yesterday') {
+            if (!isYesterday(recDate)) return false;
+          } else if (attFilterPeriod === 'week') {
+            if (!isThisWeek(recDate)) return false;
+          }
+
+          const q = attSearchBox.toLowerCase().trim();
+          if (q) {
+            const matchName = (a.staff || '').toLowerCase().includes(q);
+            const matchDate = (a.date || '').toLowerCase().includes(q);
+            const matchNotes = (a.notes || '').toLowerCase().includes(q);
+            if (!matchName && !matchDate && !matchNotes) return false;
+          }
+          return true;
+        });
+
+        // Compute summary KPIs
+        const totalPunches = filteredAttendance.length;
+        const totalMinutesWorked = filteredAttendance.reduce((sum, a) => sum + (Number(a.totalWorkMinutes) || 0), 0);
+        const totalHoursWorked = (totalMinutesWorked / 60).toFixed(1);
+
+        // Group by staff for monthly timesheet summary
+        const staffSummaryMap = {};
+        (state.staff || []).forEach(name => {
+          staffSummaryMap[name] = { staff: name, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0 };
+        });
+
+        filteredAttendance.forEach(a => {
+          if (!staffSummaryMap[a.staff]) {
+            staffSummaryMap[a.staff] = { staff: a.staff, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0 };
+          }
+          if (a.status === 'leave') {
+            staffSummaryMap[a.staff].leaves += 1;
+          } else {
+            staffSummaryMap[a.staff].shifts += 1;
+            if (a.date) staffSummaryMap[a.staff].distinctDays.add(a.date);
+            staffSummaryMap[a.staff].totalMinutes += Number(a.totalWorkMinutes || 0);
+          }
+        });
+
+        const staffSummaryList = Object.values(staffSummaryMap).sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+        // Export attendance CSV helper
+        const handleExportAttendanceCsv = () => {
+          const rows = [["Attendance ID", "Date", "Staff Name", "Status", "Clock In", "Clock Out", "Total Work Minutes", "Hours Worked", "Notes", "Manual Entry"]];
+          filteredAttendance.forEach(a => {
+            rows.push([
+              a.id,
+              a.date,
+              a.staff,
+              a.status,
+              a.clockIn ? formatPunchTime(a.clockIn) : '',
+              a.clockOut ? formatPunchTime(a.clockOut) : '',
+              a.totalWorkMinutes || 0,
+              ((a.totalWorkMinutes || 0) / 60).toFixed(2),
+              `"${(a.notes || '').replace(/"/g, '""')}"`,
+              a.isManual ? 'YES' : 'NO'
+            ]);
+          });
+          const csvContent = rows.map(r => r.join(',')).join('\n');
+          downloadFile(`attendance-timesheet-${selectedMonthKey}.csv`, csvContent, 'text/csv');
+        };
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* TERMINAL AUTHORIZATION & ANTI-PROXY CONTROL CARD */}
+            <div className="card" style={{ border: isCurrentDeviceAuthorized ? '2px solid #10B981' : '2px solid #D97706' }}>
+              <h2>
+                <span>🖥️ Studio Counter Terminal Authorization &amp; Anti-Proxy Lock</span>
+                <span className="badge" style={{ background: isCurrentDeviceAuthorized ? '#ECFDF5' : '#FEF3C7', color: isCurrentDeviceAuthorized ? '#059669' : '#D97706', fontWeight: 800 }}>
+                  {isCurrentDeviceAuthorized ? '🟢 Authorized Counter Terminal' : '⚪ Unassigned Device'}
+                </span>
+              </h2>
+              <div className="body stack">
+                <p className="hint" style={{ marginTop: 0 }}>
+                  This security feature prevents staff from marking attendance remotely from their homes or mobile phones.
+                  Only computers authorized with the secret terminal key can punch shifts at the studio.
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)', flexWrap: 'wrap', gap: '14px' }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--ink)' }}>
+                      Current Computer Status: {isCurrentDeviceAuthorized ? '🟢 Authorized Studio Terminal' : '⚪ Not Authorized'}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                      Security Token: <span className="mono" style={{ fontWeight: 700 }}>{state.terminalKey ? `${state.terminalKey.slice(0, 12)}••••` : 'IPS-TAXILA-COUNTER-KEY-2026'}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    {!isCurrentDeviceAuthorized ? (
+                      <button
+                        type="button"
+                        className="btn primary"
+                        style={{ background: '#10B981', borderColor: '#10B981', fontWeight: 700 }}
+                        onClick={() => {
+                          if (onAuthorizeTerminal) {
+                            onAuthorizeTerminal();
+                            setIsCurrentDeviceAuthorized(true);
+                            alert("✅ This computer is now registered as the official Studio Counter Terminal!");
+                          }
+                        }}
+                      >
+                        🖥️ Authorize This Computer
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        style={{ color: '#DC2626', borderColor: 'rgba(220, 38, 38, 0.3)' }}
+                        onClick={() => {
+                          if (onRevokeTerminal) {
+                            onRevokeTerminal();
+                            setIsCurrentDeviceAuthorized(false);
+                            alert("⚠️ Authorization removed from this computer.");
+                          }
+                        }}
+                      >
+                        Revoke This Device
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      title="Reset security token if an old PC was replaced"
+                      onClick={() => {
+                        if (window.confirm("Regenerate Terminal Security Key?\n\nThis will invalidate ALL currently authorized terminals. You will need to click 'Authorize This Computer' again on the counter PC.")) {
+                          if (onRegenerateTerminalKey) {
+                            onRegenerateTerminalKey();
+                            setIsCurrentDeviceAuthorized(true);
+                            alert("✅ Key regenerated and this device was re-authorized!");
+                          }
+                        }
+                      }}
+                    >
+                      🔄 Regenerate Key
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* MONTHLY TIMESHEET & FILTER BAR */}
+            <div className="card">
+              <h2>
+                <span>📅 Timesheet Period &amp; Employee Filters</span>
+                <span className="badge" style={{ background: '#EFF6FF', color: '#2563EB' }}>
+                  {fmtMonthKey(selectedMonthKey)}
+                </span>
+              </h2>
+              <div className="body">
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '20px' }}>
+                  
+                  {/* MONTH SELECTOR */}
+                  <div style={{ flex: 1, minWidth: '180px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '13px', display: 'block', marginBottom: '6px' }}>Select Month</label>
+                    <select
+                      value={selectedMonthKey}
+                      onChange={(e) => {
+                        setSelectedMonthKey(e.target.value);
+                        setAttFilterPeriod('selected_month');
+                      }}
+                      style={{ fontWeight: 700 }}
+                    >
+                      {availableMonths.map(mKey => (
+                        <option key={mKey} value={mKey}>{fmtMonthKey(mKey)} {mKey === currentMonthKey ? ' (Current)' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* PERIOD FILTER */}
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '13px', display: 'block', marginBottom: '6px' }}>Quick Filter</label>
+                    <select
+                      value={attFilterPeriod}
+                      onChange={(e) => setAttFilterPeriod(e.target.value)}
+                    >
+                      <option value="selected_month">Selected Month ({fmtMonthKey(selectedMonthKey)})</option>
+                      <option value="today">Today Only</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="week">Past 7 Days</option>
+                      <option value="all">All Time History</option>
+                    </select>
+                  </div>
+
+                  {/* STAFF FILTER */}
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '13px', display: 'block', marginBottom: '6px' }}>Staff Member</label>
+                    <select
+                      value={attFilterStaff}
+                      onChange={(e) => setAttFilterStaff(e.target.value)}
+                    >
+                      <option value="">All Staff Members</option>
+                      {state.staff.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* STATUS FILTER */}
+                  <div style={{ flex: 1, minWidth: '140px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '13px', display: 'block', marginBottom: '6px' }}>Status</label>
+                    <select
+                      value={attFilterStatus}
+                      onChange={(e) => setAttFilterStatus(e.target.value)}
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="active">Active On Duty</option>
+                      <option value="completed">Completed Shift</option>
+                      <option value="leave">Leave / Absent</option>
+                      <option value="manual">Manual Entry</option>
+                    </select>
+                  </div>
+
+                  {/* SEARCH BOX */}
+                  <div style={{ flex: 1.5, minWidth: '180px' }}>
+                    <label style={{ fontWeight: 700, fontSize: '13px', display: 'block', marginBottom: '6px' }}>Search</label>
+                    <input
+                      placeholder="Search employee, notes..."
+                      value={attSearchBox}
+                      onChange={(e) => setAttSearchBox(e.target.value)}
+                    />
+                  </div>
+
+                </div>
+
+                {/* ACTION BUTTONS */}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end', borderTop: '1px solid var(--line-soft)', paddingTop: '16px' }}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    style={{ background: '#10B981', borderColor: '#10B981', fontWeight: 700 }}
+                    onClick={() => {
+                      setSelectedPunchEdit({
+                        id: null,
+                        staff: state.staff[0] || 'Umar',
+                        date: new Date().toISOString().slice(0, 10),
+                        clockInTime: '10:00',
+                        clockOutTime: '19:00',
+                        status: 'completed',
+                        notes: 'Manual punch added by Admin'
+                      });
+                    }}
+                  >
+                    ➕ Add Manual Punch / Leave
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    style={{ fontWeight: 700, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                    onClick={handleExportAttendanceCsv}
+                  >
+                    📥 Export Timesheet (CSV)
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    style={{ fontWeight: 700 }}
+                    onClick={() => setShowPrintTimesheet(true)}
+                  >
+                    🖨️ Print Monthly Timesheet
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* MONTHLY SUMMARY STAT CARDS */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Shifts Logged</div>
+                <div className="mono" style={{ fontSize: '24px', fontWeight: 800, color: 'var(--accent)', marginTop: '4px' }}>{totalPunches}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>In selected view</div>
+              </div>
+
+              <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Hours Logged</div>
+                <div className="mono" style={{ fontSize: '24px', fontWeight: 800, color: '#059669', marginTop: '4px' }}>{totalHoursWorked} hrs</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{formatMinStr(totalMinutesWorked)}</div>
+              </div>
+
+              <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Registered Staff</div>
+                <div className="mono" style={{ fontSize: '24px', fontWeight: 800, color: 'var(--ink)', marginTop: '4px' }}>{state.staff.length}</div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>Team members</div>
+              </div>
+            </div>
+
+            {/* STAFF PAYROLL & TIMESHEET SUMMARY TABLE */}
+            <div className="card">
+              <h2>
+                <span>👥 Staff Timesheet &amp; Working Hours Summary</span>
+                <span className="badge">Payroll Ready</span>
+              </h2>
+              <div className="body">
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Staff Member</th>
+                        <th className="num">Days Worked</th>
+                        <th className="num">Total Hours</th>
+                        <th className="num">Avg Shift</th>
+                        <th className="num">Leaves</th>
+                        <th style={{ textAlign: 'center' }}>Quick Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {staffSummaryList.map(item => {
+                        const days = item.distinctDays.size;
+                        const avgMin = days > 0 ? Math.round(item.totalMinutes / days) : 0;
+
+                        return (
+                          <tr key={item.staff}>
+                            <td style={{ fontWeight: 800, fontSize: '15px' }}>{item.staff}</td>
+                            <td className="num mono" style={{ fontWeight: 700 }}>{days} day(s)</td>
+                            <td className="num mono" style={{ fontWeight: 800, color: '#059669' }}>
+                              {(item.totalMinutes / 60).toFixed(1)} hrs ({formatMinStr(item.totalMinutes)})
+                            </td>
+                            <td className="num mono">{formatMinStr(avgMin)}</td>
+                            <td className="num mono">{item.leaves > 0 ? <span style={{ color: '#DC2626', fontWeight: 700 }}>{item.leaves}</span> : '0'}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                onClick={() => setAttFilterStaff(item.staff)}
+                              >
+                                Filter Logs
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* DETAILED PUNCH LOGS */}
+            <div className="card">
+              <h2>
+                <span>📋 Detailed Attendance Punch Log</span>
+                <span className="badge">{filteredAttendance.length} record(s)</span>
+              </h2>
+              <div className="body">
+                {!filteredAttendance.length ? (
+                  <div className="empty-state">No attendance records found matching current filters.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Staff</th>
+                          <th>Clock In</th>
+                          <th>Clock Out</th>
+                          <th>Break Time</th>
+                          <th>Worked Time</th>
+                          <th>Status</th>
+                          <th>Notes</th>
+                          <th style={{ textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAttendance.map(rec => {
+                          const breakMin = (rec.breaks || []).reduce((sum, b) => sum + (Number(b.durationMin) || 0), 0);
+
+                          return (
+                            <tr key={rec.id}>
+                              <td style={{ fontSize: '13px', fontWeight: 600 }}>{rec.date}</td>
+                              <td style={{ fontWeight: 800 }}>{rec.staff}</td>
+                              <td style={{ fontSize: '13px' }}>{formatPunchTime(rec.clockIn)}</td>
+                              <td style={{ fontSize: '13px' }}>{rec.clockOut ? formatPunchTime(rec.clockOut) : '—'}</td>
+                              <td className="mono" style={{ fontSize: '13px' }}>{breakMin > 0 ? `${breakMin}m` : '0m'}</td>
+                              <td className="mono" style={{ fontWeight: 800, color: '#059669' }}>
+                                {formatMinStr(rec.totalWorkMinutes)}
+                              </td>
+                              <td>
+                                {rec.status === 'clocked_in' && (
+                                  <span className="badge" style={{ background: '#ECFDF5', color: '#059669', fontWeight: 800 }}>
+                                    🟢 On Shift
+                                  </span>
+                                )}
+                                {rec.status === 'on_break' && (
+                                  <span className="badge" style={{ background: '#FEF3C7', color: '#D97706', fontWeight: 800 }}>
+                                    ☕ On Break
+                                  </span>
+                                )}
+                                {rec.status === 'completed' && (
+                                  <span className="badge" style={{ background: 'var(--line-soft)', color: 'var(--muted)' }}>
+                                    🏁 Completed
+                                  </span>
+                                )}
+                                {rec.status === 'leave' && (
+                                  <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626' }}>
+                                    🏖️ Leave
+                                  </span>
+                                )}
+                                {rec.isManual && (
+                                  <span className="badge" style={{ marginLeft: '4px', background: '#EFF6FF', color: '#2563EB', fontSize: '10px' }}>
+                                    Manual
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ fontSize: '12px', color: 'var(--muted)', maxWidth: '200px' }}>
+                                {rec.notes || '—'}
+                              </td>
+                              <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <button
+                                  type="button"
+                                  className="btn ghost sm"
+                                  style={{ marginRight: '6px' }}
+                                  onClick={() => {
+                                    const inDate = new Date(rec.clockIn || rec.ts);
+                                    const inTimeStr = `${String(inDate.getHours()).padStart(2, '0')}:${String(inDate.getMinutes()).padStart(2, '0')}`;
+                                    let outTimeStr = '';
+                                    if (rec.clockOut) {
+                                      const outDate = new Date(rec.clockOut);
+                                      outTimeStr = `${String(outDate.getHours()).padStart(2, '0')}:${String(outDate.getMinutes()).padStart(2, '0')}`;
+                                    }
+                                    setSelectedPunchEdit({
+                                      id: rec.id,
+                                      staff: rec.staff,
+                                      date: rec.date || inDate.toISOString().slice(0, 10),
+                                      clockInTime: inTimeStr,
+                                      clockOutTime: outTimeStr,
+                                      status: rec.status,
+                                      notes: rec.notes || ''
+                                    });
+                                  }}
+                                  title="Edit punch times or note"
+                                >
+                                  ✏️ Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn danger sm"
+                                  onClick={() => onDeleteAttendance && onDeleteAttendance(rec.id)}
+                                  title="Delete attendance record"
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
+
       {/* TAB 6: SYSTEM & BACKUP */}
       {adminTab === 'system' && (
         <div className="grid">
@@ -2232,6 +2748,212 @@ export default function AdminDashboard({
                 🖨️ Print Shift Slip
               </button>
               <button className="btn ghost" style={{ flex: 1 }} onClick={() => setSelectedShiftSlip(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT / ADD MANUAL PUNCH MODAL */}
+      {selectedPunchEdit && (
+        <div
+          className="overlay show"
+          onClick={(e) => {
+            if (e.target.className && e.target.className.includes('overlay')) setSelectedPunchEdit(null);
+          }}
+        >
+          <div className="card" style={{ maxWidth: '520px', width: '100%', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0 }}>
+                {selectedPunchEdit.id ? '✏️ Edit Attendance Punch' : '➕ Add Manual Attendance / Leave'}
+              </h3>
+              <button className="x" onClick={() => setSelectedPunchEdit(null)}>×</button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const { id, staff, date, clockInTime, clockOutTime, status, notes } = selectedPunchEdit;
+
+              const [inH, inM] = (clockInTime || '10:00').split(':').map(Number);
+              const [y, m, d] = date.split('-').map(Number);
+              const inDate = new Date(y, m - 1, d, inH, inM, 0);
+              const clockInTs = inDate.getTime();
+
+              let clockOutTs = null;
+              if (clockOutTime && status !== 'clocked_in' && status !== 'on_break') {
+                const [outH, outM] = clockOutTime.split(':').map(Number);
+                const outDate = new Date(y, m - 1, d, outH, outM, 0);
+                clockOutTs = outDate.getTime();
+              }
+
+              let workMinutes = 0;
+              if (clockInTs && clockOutTs && clockOutTs > clockInTs) {
+                workMinutes = Math.max(0, Math.round((clockOutTs - clockInTs) / 60000));
+              }
+
+              const payload = {
+                id,
+                staff,
+                date,
+                clockIn: clockInTs,
+                clockOut: clockOutTs,
+                breaks: [],
+                totalWorkMinutes: status === 'leave' ? 0 : workMinutes,
+                status,
+                notes: notes.trim(),
+                isManual: true
+              };
+
+              if (onSaveManualAttendance) {
+                await onSaveManualAttendance(payload);
+              }
+              setSelectedPunchEdit(null);
+            }}>
+              <div className="field">
+                <label>Staff Member</label>
+                <select
+                  value={selectedPunchEdit.staff}
+                  onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, staff: e.target.value })}
+                >
+                  {state.staff.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label>Date (YYYY-MM-DD)</label>
+                <input
+                  type="date"
+                  value={selectedPunchEdit.date}
+                  onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, date: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="row r2">
+                <div className="field">
+                  <label>Clock-In Time</label>
+                  <input
+                    type="time"
+                    value={selectedPunchEdit.clockInTime}
+                    onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, clockInTime: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label>Clock-Out Time</label>
+                  <input
+                    type="time"
+                    value={selectedPunchEdit.clockOutTime}
+                    onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, clockOutTime: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="field">
+                <label>Status</label>
+                <select
+                  value={selectedPunchEdit.status}
+                  onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, status: e.target.value })}
+                >
+                  <option value="completed">Completed Shift</option>
+                  <option value="clocked_in">Clocked In (Active)</option>
+                  <option value="leave">Leave / Day Off</option>
+                </select>
+              </div>
+
+              <div className="field">
+                <label>Notes / Reason</label>
+                <input
+                  placeholder="e.g. Corrected forgot clock out / Approved leave"
+                  value={selectedPunchEdit.notes}
+                  onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, notes: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
+                <button type="submit" className="btn primary" style={{ flex: 1, padding: '12px', fontWeight: 700 }}>
+                  💾 Save Attendance Record
+                </button>
+                <button type="button" className="btn ghost" onClick={() => setSelectedPunchEdit(null)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PRINTABLE TIMESHEET MODAL */}
+      {showPrintTimesheet && (
+        <div
+          className="overlay show"
+          onClick={(e) => {
+            if (e.target.className && e.target.className.includes('overlay')) setShowPrintTimesheet(false);
+          }}
+        >
+          <div className="card" style={{ maxWidth: '820px', width: '100%', padding: '30px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: 800 }}>Ideal Photo Studio</h2>
+                <div style={{ color: 'var(--muted)', fontSize: '13px' }}>
+                  Shop # 45, Post Office Market HIT, Taxila Cantt · Monthly Attendance Report
+                </div>
+                <div style={{ color: 'var(--accent)', fontWeight: 700, fontSize: '14px', marginTop: '4px' }}>
+                  Period: {fmtMonthKey(selectedMonthKey)}
+                </div>
+              </div>
+              <button className="x" onClick={() => setShowPrintTimesheet(false)}>×</button>
+            </div>
+
+            <table style={{ width: '100%', marginBottom: '24px' }}>
+              <thead>
+                <tr>
+                  <th>Staff Name</th>
+                  <th className="num">Days Present</th>
+                  <th className="num">Total Hours</th>
+                  <th className="num">Leaves</th>
+                  <th>Sign</th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.staff.map(name => {
+                  const staffRecs = (state.attendance || []).filter(a => a.staff === name && (a.date || '').startsWith(selectedMonthKey));
+                  const days = new Set(staffRecs.filter(a => a.status !== 'leave').map(a => a.date)).size;
+                  const totalMin = staffRecs.reduce((sum, a) => sum + (Number(a.totalWorkMinutes) || 0), 0);
+                  const leaves = staffRecs.filter(a => a.status === 'leave').length;
+
+                  return (
+                    <tr key={name}>
+                      <td style={{ fontWeight: 800, padding: '10px 8px' }}>{name}</td>
+                      <td className="num mono" style={{ fontWeight: 700 }}>{days}</td>
+                      <td className="num mono" style={{ fontWeight: 700 }}>{(totalMin / 60).toFixed(1)} hrs ({formatMinStr(totalMin)})</td>
+                      <td className="num mono">{leaves}</td>
+                      <td style={{ borderBottom: '1px solid #CCC', width: '140px' }}></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '40px', paddingTop: '20px', borderTop: '1px solid var(--line)', fontSize: '13px' }}>
+              <div>
+                Verified By: ___________________<br />
+                (Studio Manager)
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                Approved By: ___________________<br />
+                (Proprietor / Usman)
+              </div>
+            </div>
+
+            <div className="rc-actions" style={{ marginTop: '24px' }}>
+              <button type="button" className="btn primary" style={{ flex: 1 }} onClick={() => window.print()}>
+                🖨️ Print Timesheet
+              </button>
+              <button type="button" className="btn ghost" style={{ flex: 1 }} onClick={() => setShowPrintTimesheet(false)}>
                 Close
               </button>
             </div>
