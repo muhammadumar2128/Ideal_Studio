@@ -1498,9 +1498,29 @@ export default function TeamPOSView({
                           </span>
                         )
                       ) : (
-                        <span className="badge" style={{ background: 'var(--line-soft)', color: 'var(--muted)' }}>
-                          ⚪ Not Clocked In
-                        </span>
+                        (() => {
+                          const todayAbsent = todayAttendance.find(a => a.staff === attStaff && a.status === 'absent');
+                          const todayLeave = todayAttendance.find(a => a.staff === attStaff && a.status === 'leave');
+                          if (todayAbsent) {
+                            return (
+                              <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626', fontWeight: 800, border: '1px solid #FCA5A5' }}>
+                                ❌ Marked Absent Today
+                              </span>
+                            );
+                          }
+                          if (todayLeave) {
+                            return (
+                              <span className="badge" style={{ background: '#FEF3C7', color: '#D97706', fontWeight: 800 }}>
+                                🏖️ On Leave Today
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="badge" style={{ background: 'var(--line-soft)', color: 'var(--muted)' }}>
+                              ⚪ Not Clocked In
+                            </span>
+                          );
+                        })()
                       )}
                     </div>
 
@@ -1688,8 +1708,13 @@ export default function TeamPOSView({
                                       🏁 Completed
                                     </span>
                                   )}
+                                  {rec.status === 'absent' && (
+                                    <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626', fontWeight: 800, border: '1px solid #FCA5A5' }}>
+                                      ❌ Absent
+                                    </span>
+                                  )}
                                   {rec.status === 'leave' && (
-                                    <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626' }}>
+                                    <span className="badge" style={{ background: '#FEF3C7', color: '#D97706' }}>
                                       🏖️ Leave
                                     </span>
                                   )}

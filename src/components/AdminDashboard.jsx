@@ -1784,15 +1784,17 @@ export default function AdminDashboard({
         // Group by staff for monthly timesheet summary
         const staffSummaryMap = {};
         (state.staff || []).forEach(name => {
-          staffSummaryMap[name] = { staff: name, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0 };
+          staffSummaryMap[name] = { staff: name, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0, absents: 0 };
         });
 
         filteredAttendance.forEach(a => {
           if (!staffSummaryMap[a.staff]) {
-            staffSummaryMap[a.staff] = { staff: a.staff, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0 };
+            staffSummaryMap[a.staff] = { staff: a.staff, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0, absents: 0 };
           }
           if (a.status === 'leave') {
             staffSummaryMap[a.staff].leaves += 1;
+          } else if (a.status === 'absent') {
+            staffSummaryMap[a.staff].absents += 1;
           } else {
             staffSummaryMap[a.staff].shifts += 1;
             if (a.date) staffSummaryMap[a.staff].distinctDays.add(a.date);
@@ -1969,10 +1971,11 @@ export default function AdminDashboard({
                       onChange={(e) => setAttFilterStatus(e.target.value)}
                     >
                       <option value="">All Statuses</option>
-                      <option value="active">Active On Duty</option>
-                      <option value="completed">Completed Shift</option>
-                      <option value="leave">Leave / Absent</option>
-                      <option value="manual">Manual Entry</option>
+                      <option value="absent">❌ Absent Only</option>
+                      <option value="active">🟢 Active On Duty</option>
+                      <option value="completed">🏁 Completed Shift</option>
+                      <option value="leave">🏖️ Approved Leave</option>
+                      <option value="manual">✏️ Manual Entry</option>
                     </select>
                   </div>
 
@@ -1993,6 +1996,25 @@ export default function AdminDashboard({
                   <button
                     type="button"
                     className="btn primary"
+                    style={{ background: '#DC2626', borderColor: '#DC2626', fontWeight: 700 }}
+                    onClick={() => {
+                      setSelectedPunchEdit({
+                        id: null,
+                        staff: state.staff[0] || 'Umar',
+                        date: new Date().toISOString().slice(0, 10),
+                        clockInTime: '',
+                        clockOutTime: '',
+                        status: 'absent',
+                        notes: 'Marked absent by Admin'
+                      });
+                    }}
+                  >
+                    ❌ Mark Absent
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn primary"
                     style={{ background: '#10B981', borderColor: '#10B981', fontWeight: 700 }}
                     onClick={() => {
                       setSelectedPunchEdit({
@@ -2006,7 +2028,7 @@ export default function AdminDashboard({
                       });
                     }}
                   >
-                    ➕ Add Manual Punch / Leave
+                    ➕ Add Manual Shift / Leave
                   </button>
 
                   <button
@@ -2044,6 +2066,14 @@ export default function AdminDashboard({
                 <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{formatMinStr(totalMinutesWorked)}</div>
               </div>
 
+              <div style={{ padding: '16px', background: filteredAttendance.filter(a => a.status === 'absent').length > 0 ? '#FEF2F2' : 'var(--paper)', borderRadius: '12px', border: filteredAttendance.filter(a => a.status === 'absent').length > 0 ? '1px solid #EF4444' : '1px solid var(--line)' }}>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Absences Recorded</div>
+                <div className="mono" style={{ fontSize: '24px', fontWeight: 800, color: '#DC2626', marginTop: '4px' }}>
+                  {filteredAttendance.filter(a => a.status === 'absent').length}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>Unexcused absences</div>
+              </div>
+
               <div style={{ padding: '16px', background: 'var(--paper)', borderRadius: '12px', border: '1px solid var(--line)' }}>
                 <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>Registered Staff</div>
                 <div className="mono" style={{ fontSize: '24px', fontWeight: 800, color: 'var(--ink)', marginTop: '4px' }}>{state.staff.length}</div>
@@ -2066,7 +2096,8 @@ export default function AdminDashboard({
                         <th className="num">Days Worked</th>
                         <th className="num">Total Hours</th>
                         <th className="num">Avg Shift</th>
-                        <th className="num">Leaves</th>
+                        <th className="num">❌ Absent</th>
+                        <th className="num">🏖️ Leaves</th>
                         <th style={{ textAlign: 'center' }}>Quick Action</th>
                       </tr>
                     </thead>
@@ -2083,14 +2114,39 @@ export default function AdminDashboard({
                               {(item.totalMinutes / 60).toFixed(1)} hrs ({formatMinStr(item.totalMinutes)})
                             </td>
                             <td className="num mono">{formatMinStr(avgMin)}</td>
-                            <td className="num mono">{item.leaves > 0 ? <span style={{ color: '#DC2626', fontWeight: 700 }}>{item.leaves}</span> : '0'}</td>
-                            <td style={{ textAlign: 'center' }}>
+                            <td className="num mono">
+                              {item.absents > 0 ? (
+                                <span style={{ color: '#DC2626', fontWeight: 800, background: '#FEE2E2', padding: '2px 8px', borderRadius: '6px' }}>
+                                  {item.absents}
+                                </span>
+                              ) : '0'}
+                            </td>
+                            <td className="num mono">{item.leaves > 0 ? <span style={{ color: '#D97706', fontWeight: 700 }}>{item.leaves}</span> : '0'}</td>
+                            <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                               <button
                                 type="button"
                                 className="btn ghost sm"
+                                style={{ marginRight: '6px' }}
                                 onClick={() => setAttFilterStaff(item.staff)}
                               >
                                 Filter Logs
+                              </button>
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                style={{ color: '#DC2626', borderColor: 'rgba(220, 38, 38, 0.3)', background: 'rgba(220, 38, 38, 0.05)' }}
+                                onClick={() => setSelectedPunchEdit({
+                                  id: null,
+                                  staff: item.staff,
+                                  date: new Date().toISOString().slice(0, 10),
+                                  clockInTime: '',
+                                  clockOutTime: '',
+                                  status: 'absent',
+                                  notes: 'Marked absent by Admin'
+                                })}
+                                title={`Mark ${item.staff} absent today`}
+                              >
+                                ❌ Mark Absent
                               </button>
                             </td>
                           </tr>
@@ -2142,6 +2198,11 @@ export default function AdminDashboard({
                                 {formatMinStr(rec.totalWorkMinutes)}
                               </td>
                               <td>
+                                {rec.status === 'absent' && (
+                                  <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626', fontWeight: 800, border: '1px solid #FCA5A5' }}>
+                                    ❌ Absent
+                                  </span>
+                                )}
                                 {rec.status === 'clocked_in' && (
                                   <span className="badge" style={{ background: '#ECFDF5', color: '#059669', fontWeight: 800 }}>
                                     🟢 On Shift
@@ -2158,7 +2219,7 @@ export default function AdminDashboard({
                                   </span>
                                 )}
                                 {rec.status === 'leave' && (
-                                  <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626' }}>
+                                  <span className="badge" style={{ background: '#FEF3C7', color: '#D97706' }}>
                                     🏖️ Leave
                                   </span>
                                 )}
@@ -2774,22 +2835,31 @@ export default function AdminDashboard({
             <form onSubmit={async (e) => {
               e.preventDefault();
               const { id, staff, date, clockInTime, clockOutTime, status, notes } = selectedPunchEdit;
+              const isAbsentOrLeave = status === 'absent' || status === 'leave';
 
-              const [inH, inM] = (clockInTime || '10:00').split(':').map(Number);
-              const [y, m, d] = date.split('-').map(Number);
-              const inDate = new Date(y, m - 1, d, inH, inM, 0);
-              const clockInTs = inDate.getTime();
-
+              let clockInTs = null;
               let clockOutTs = null;
-              if (clockOutTime && status !== 'clocked_in' && status !== 'on_break') {
-                const [outH, outM] = clockOutTime.split(':').map(Number);
-                const outDate = new Date(y, m - 1, d, outH, outM, 0);
-                clockOutTs = outDate.getTime();
-              }
-
               let workMinutes = 0;
-              if (clockInTs && clockOutTs && clockOutTs > clockInTs) {
-                workMinutes = Math.max(0, Math.round((clockOutTs - clockInTs) / 60000));
+
+              if (!isAbsentOrLeave) {
+                const [inH, inM] = (clockInTime || '10:00').split(':').map(Number);
+                const [y, m, d] = date.split('-').map(Number);
+                const inDate = new Date(y, m - 1, d, inH, inM, 0);
+                clockInTs = inDate.getTime();
+
+                if (clockOutTime && status !== 'clocked_in' && status !== 'on_break') {
+                  const [outH, outM] = clockOutTime.split(':').map(Number);
+                  const outDate = new Date(y, m - 1, d, outH, outM, 0);
+                  clockOutTs = outDate.getTime();
+                }
+
+                if (clockInTs && clockOutTs && clockOutTs > clockInTs) {
+                  workMinutes = Math.max(0, Math.round((clockOutTs - clockInTs) / 60000));
+                }
+              } else {
+                const [y, m, d] = date.split('-').map(Number);
+                const dayDate = new Date(y, m - 1, d, 9, 0, 0);
+                clockInTs = dayDate.getTime();
               }
 
               const payload = {
@@ -2799,7 +2869,7 @@ export default function AdminDashboard({
                 clockIn: clockInTs,
                 clockOut: clockOutTs,
                 breaks: [],
-                totalWorkMinutes: status === 'leave' ? 0 : workMinutes,
+                totalWorkMinutes: isAbsentOrLeave ? 0 : workMinutes,
                 status,
                 notes: notes.trim(),
                 isManual: true
@@ -2832,42 +2902,52 @@ export default function AdminDashboard({
                 />
               </div>
 
-              <div className="row r2">
-                <div className="field">
-                  <label>Clock-In Time</label>
-                  <input
-                    type="time"
-                    value={selectedPunchEdit.clockInTime}
-                    onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, clockInTime: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="field">
-                  <label>Clock-Out Time</label>
-                  <input
-                    type="time"
-                    value={selectedPunchEdit.clockOutTime}
-                    onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, clockOutTime: e.target.value })}
-                  />
-                </div>
-              </div>
-
               <div className="field">
-                <label>Status</label>
+                <label>Attendance Status</label>
                 <select
                   value={selectedPunchEdit.status}
                   onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, status: e.target.value })}
+                  style={{ fontWeight: 800 }}
                 >
-                  <option value="completed">Completed Shift</option>
-                  <option value="clocked_in">Clocked In (Active)</option>
-                  <option value="leave">Leave / Day Off</option>
+                  <option value="absent">❌ Mark Absent (Did Not Attend / Missing)</option>
+                  <option value="leave">🏖️ Approved Leave / Day Off</option>
+                  <option value="completed">🏁 Completed Shift</option>
+                  <option value="clocked_in">🟢 Clocked In (Active On Duty)</option>
                 </select>
               </div>
 
-              <div className="field">
+              {selectedPunchEdit.status !== 'absent' && selectedPunchEdit.status !== 'leave' && (
+                <div className="row r2">
+                  <div className="field">
+                    <label>Clock-In Time</label>
+                    <input
+                      type="time"
+                      value={selectedPunchEdit.clockInTime || '10:00'}
+                      onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, clockInTime: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Clock-Out Time</label>
+                    <input
+                      type="time"
+                      value={selectedPunchEdit.clockOutTime || '19:00'}
+                      onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, clockOutTime: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {selectedPunchEdit.status === 'absent' && (
+                <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 600 }}>
+                  ⚠️ Marking as <strong>Absent</strong> records 0 working hours for this date.
+                </div>
+              )}
+
+              <div className="field" style={{ marginTop: '12px' }}>
                 <label>Notes / Reason</label>
                 <input
-                  placeholder="e.g. Corrected forgot clock out / Approved leave"
+                  placeholder="e.g. Uninformed absence / Sick leave / Regular shift"
                   value={selectedPunchEdit.notes}
                   onChange={(e) => setSelectedPunchEdit({ ...selectedPunchEdit, notes: e.target.value })}
                 />
@@ -2914,15 +2994,17 @@ export default function AdminDashboard({
                   <th>Staff Name</th>
                   <th className="num">Days Present</th>
                   <th className="num">Total Hours</th>
-                  <th className="num">Leaves</th>
+                  <th className="num">❌ Absent</th>
+                  <th className="num">🏖️ Leaves</th>
                   <th>Sign</th>
                 </tr>
               </thead>
               <tbody>
                 {state.staff.map(name => {
                   const staffRecs = (state.attendance || []).filter(a => a.staff === name && (a.date || '').startsWith(selectedMonthKey));
-                  const days = new Set(staffRecs.filter(a => a.status !== 'leave').map(a => a.date)).size;
+                  const days = new Set(staffRecs.filter(a => a.status !== 'leave' && a.status !== 'absent').map(a => a.date)).size;
                   const totalMin = staffRecs.reduce((sum, a) => sum + (Number(a.totalWorkMinutes) || 0), 0);
+                  const absents = staffRecs.filter(a => a.status === 'absent').length;
                   const leaves = staffRecs.filter(a => a.status === 'leave').length;
 
                   return (
@@ -2930,6 +3012,7 @@ export default function AdminDashboard({
                       <td style={{ fontWeight: 800, padding: '10px 8px' }}>{name}</td>
                       <td className="num mono" style={{ fontWeight: 700 }}>{days}</td>
                       <td className="num mono" style={{ fontWeight: 700 }}>{(totalMin / 60).toFixed(1)} hrs ({formatMinStr(totalMin)})</td>
+                      <td className="num mono">{absents > 0 ? <span style={{ color: '#DC2626', fontWeight: 800 }}>{absents}</span> : '0'}</td>
                       <td className="num mono">{leaves}</td>
                       <td style={{ borderBottom: '1px solid #CCC', width: '140px' }}></td>
                     </tr>
