@@ -108,13 +108,26 @@ export default function AdminDashboard({
   onDeleteAttendance,
   onAuthorizeTerminal,
   onRevokeTerminal,
-  onRegenerateTerminalKey
+  onRegenerateTerminalKey,
+  onUpdateShopHours
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
   const now = new Date();
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
+
+  // Shop Opening & Late Shift Rules states
+  const [shopOpenTimeVal, setShopOpenTimeVal] = useState(state.shopOpenTime || "09:00");
+  const [graceMinutesVal, setGraceMinutesVal] = useState(state.graceMinutes != null ? state.graceMinutes : 15);
+  const [morningOpenerVal, setMorningOpenerVal] = useState(state.morningOpener || "Alex");
+  const [isSavingHours, setIsSavingHours] = useState(false);
+
+  useEffect(() => {
+    if (state.shopOpenTime) setShopOpenTimeVal(state.shopOpenTime);
+    if (state.graceMinutes != null) setGraceMinutesVal(state.graceMinutes);
+    if (state.morningOpener) setMorningOpenerVal(state.morningOpener);
+  }, [state.shopOpenTime, state.graceMinutes, state.morningOpener]);
 
   // Attendance and Terminal security states
   const [attSearchBox, setAttSearchBox] = useState('');
@@ -1748,6 +1761,8 @@ export default function AdminDashboard({
         const filteredAttendance = attendanceList.filter(a => {
           if (attFilterStaff && a.staff !== attFilterStaff) return false;
           if (attFilterStatus) {
+            if (attFilterStatus === 'absent' && a.status !== 'absent') return false;
+            if (attFilterStatus === 'late' && !a.isLate && !(a.lateMinutes > 0)) return false;
             if (attFilterStatus === 'active' && !(a.status === 'clocked_in' || a.status === 'on_break')) return false;
             if (attFilterStatus === 'completed' && a.status !== 'completed') return false;
             if (attFilterStatus === 'leave' && a.status !== 'leave') return false;
@@ -1780,16 +1795,17 @@ export default function AdminDashboard({
         const totalPunches = filteredAttendance.length;
         const totalMinutesWorked = filteredAttendance.reduce((sum, a) => sum + (Number(a.totalWorkMinutes) || 0), 0);
         const totalHoursWorked = (totalMinutesWorked / 60).toFixed(1);
+        const totalLatePunches = filteredAttendance.filter(a => a.isLate || a.lateMinutes > 0).length;
 
         // Group by staff for monthly timesheet summary
         const staffSummaryMap = {};
         (state.staff || []).forEach(name => {
-          staffSummaryMap[name] = { staff: name, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0, absents: 0 };
+          staffSummaryMap[name] = { staff: name, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0, absents: 0, lateCount: 0, lateMinutes: 0 };
         });
 
         filteredAttendance.forEach(a => {
           if (!staffSummaryMap[a.staff]) {
-            staffSummaryMap[a.staff] = { staff: a.staff, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0, absents: 0 };
+            staffSummaryMap[a.staff] = { staff: a.staff, shifts: 0, distinctDays: new Set(), totalMinutes: 0, leaves: 0, absents: 0, lateCount: 0, lateMinutes: 0 };
           }
           if (a.status === 'leave') {
             staffSummaryMap[a.staff].leaves += 1;
@@ -1799,10 +1815,38 @@ export default function AdminDashboard({
             staffSummaryMap[a.staff].shifts += 1;
             if (a.date) staffSummaryMap[a.staff].distinctDays.add(a.date);
             staffSummaryMap[a.staff].totalMinutes += Number(a.totalWorkMinutes || 0);
+
+            if (a.isLate || a.lateMinutes > 0) {
+              staffSummaryMap[a.staff].lateCount += 1;
+              staffSummaryMap[a.staff].lateMinutes += Number(a.lateMinutes || 0);
+            }
           }
         });
 
         const staffSummaryList = Object.values(staffSummaryMap).sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+        // Detect if shop has not been opened yet today past scheduled time
+        const unpunctualShopAlert = (() => {
+          const todayStr = new Date().toISOString().slice(0, 10);
+          const todayPunches = (state.attendance || []).filter(a => a.date === todayStr && a.status !== 'leave' && a.status !== 'absent');
+          if (todayPunches.length > 0) return null; // Already opened!
+
+          const [h, m] = (state.shopOpenTime || "09:00").split(':').map(Number);
+          const grace = Number(state.graceMinutes != null ? state.graceMinutes : 15);
+          const n = new Date();
+          const scheduledDate = new Date(n.getFullYear(), n.getMonth(), n.getDate(), h, m, 0);
+          const deadlineDate = new Date(scheduledDate.getTime() + (grace * 60000));
+
+          if (n > deadlineDate) {
+            const lateMins = Math.round((n - scheduledDate) / 60000);
+            return {
+              scheduled: state.shopOpenTime || "09:00",
+              opener: state.morningOpener || "Alex",
+              lateMins
+            };
+          }
+          return null;
+        })();
 
         // Export attendance CSV helper
         const handleExportAttendanceCsv = () => {
@@ -1827,6 +1871,136 @@ export default function AdminDashboard({
 
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* UNPUNCTUAL MORNING SHOP OPENING ALERT */}
+            {unpunctualShopAlert && (
+              <div
+                style={{
+                  background: '#FEF2F2',
+                  border: '2px solid #EF4444',
+                  borderRadius: '12px',
+                  padding: '18px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '32px' }}>🚨</span>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '16px', color: '#DC2626' }}>
+                      Shop Opening Alert: Counter PC is still Offline!
+                    </div>
+                    <div style={{ fontSize: '13.5px', color: '#7F1D1D', marginTop: '2px' }}>
+                      Scheduled opening was <strong>{unpunctualShopAlert.scheduled} AM</strong> (assigned to <strong>{unpunctualShopAlert.opener}</strong>).
+                      As of now, the counter PC has not been powered on / opened ({unpunctualShopAlert.lateMins} minutes past scheduled time).
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn primary"
+                  style={{ background: '#DC2626', borderColor: '#DC2626', fontWeight: 800 }}
+                  onClick={() => {
+                    setSelectedPunchEdit({
+                      id: null,
+                      staff: unpunctualShopAlert.opener,
+                      date: new Date().toISOString().slice(0, 10),
+                      clockInTime: '',
+                      clockOutTime: '',
+                      status: 'absent',
+                      notes: `Unexcused absence · Did not open shop at ${unpunctualShopAlert.scheduled} AM`
+                    });
+                  }}
+                >
+                  ❌ Mark {unpunctualShopAlert.opener} Absent Today
+                </button>
+              </div>
+            )}
+
+            {/* SHOP OPENING & SHIFT HOURS CONFIGURATION CARD */}
+            <div className="card" style={{ border: '2px solid rgba(37, 99, 235, 0.3)' }}>
+              <h2>
+                <span>⏰ Studio Morning Opening &amp; Shift Punctuality Rules</span>
+                <span className="badge" style={{ background: '#EFF6FF', color: '#2563EB', fontWeight: 800 }}>
+                  Automated Late Detection
+                </span>
+              </h2>
+              <div className="body">
+                <p className="hint" style={{ marginTop: 0 }}>
+                  When the designated morning opener turns on the studio PC and launches the POS, the system automatically checks if it is past the scheduled opening time and records late minutes automatically.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                  <div className="field">
+                    <label>Scheduled Shop Opening Time</label>
+                    <input
+                      type="time"
+                      value={shopOpenTimeVal}
+                      onChange={(e) => setShopOpenTimeVal(e.target.value)}
+                      style={{ fontSize: '16px', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Grace Period (Minutes)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      value={graceMinutesVal}
+                      onChange={(e) => setGraceMinutesVal(e.target.value)}
+                      style={{ fontSize: '16px', fontWeight: 700 }}
+                    />
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                      e.g. 15 mins allows clock-in up to {(() => {
+                        const [h, m] = (shopOpenTimeVal || "09:00").split(':').map(Number);
+                        const d = new Date(2026, 0, 1, h, m + Number(graceMinutesVal || 0));
+                        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                      })()} without late penalty.
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label>Default Morning Opener Staff</label>
+                    <select
+                      value={morningOpenerVal}
+                      onChange={(e) => setMorningOpenerVal(e.target.value)}
+                      style={{ fontSize: '16px', fontWeight: 700 }}
+                    >
+                      {state.staff.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={isSavingHours}
+                    onClick={async () => {
+                      setIsSavingHours(true);
+                      if (onUpdateShopHours) {
+                        await onUpdateShopHours({
+                          shopOpenTime: shopOpenTimeVal,
+                          graceMinutes: Number(graceMinutesVal),
+                          morningOpener: morningOpenerVal
+                        });
+                      }
+                      setIsSavingHours(false);
+                      alert("✅ Studio opening rules saved successfully!");
+                    }}
+                  >
+                    💾 Save Opening &amp; Punctuality Rules
+                  </button>
+                </div>
+              </div>
+            </div>
             
             {/* TERMINAL AUTHORIZATION & ANTI-PROXY CONTROL CARD */}
             <div className="card" style={{ border: isCurrentDeviceAuthorized ? '2px solid #10B981' : '2px solid #D97706' }}>
@@ -1971,6 +2145,7 @@ export default function AdminDashboard({
                       onChange={(e) => setAttFilterStatus(e.target.value)}
                     >
                       <option value="">All Statuses</option>
+                      <option value="late">⚠️ Late Arrivals Only</option>
                       <option value="absent">❌ Absent Only</option>
                       <option value="active">🟢 Active On Duty</option>
                       <option value="completed">🏁 Completed Shift</option>
@@ -2096,6 +2271,7 @@ export default function AdminDashboard({
                         <th className="num">Days Worked</th>
                         <th className="num">Total Hours</th>
                         <th className="num">Avg Shift</th>
+                        <th className="num">⚠️ Late</th>
                         <th className="num">❌ Absent</th>
                         <th className="num">🏖️ Leaves</th>
                         <th style={{ textAlign: 'center' }}>Quick Action</th>
@@ -2114,6 +2290,15 @@ export default function AdminDashboard({
                               {(item.totalMinutes / 60).toFixed(1)} hrs ({formatMinStr(item.totalMinutes)})
                             </td>
                             <td className="num mono">{formatMinStr(avgMin)}</td>
+                            <td className="num mono">
+                              {item.lateCount > 0 ? (
+                                <span style={{ color: '#D97706', fontWeight: 800, background: '#FEF3C7', padding: '2px 8px', borderRadius: '6px' }}>
+                                  {item.lateCount}× ({formatMinStr(item.lateMinutes)})
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--muted)' }}>0</span>
+                              )}
+                            </td>
                             <td className="num mono">
                               {item.absents > 0 ? (
                                 <span style={{ color: '#DC2626', fontWeight: 800, background: '#FEE2E2', padding: '2px 8px', borderRadius: '6px' }}>
@@ -2221,6 +2406,11 @@ export default function AdminDashboard({
                                 {rec.status === 'leave' && (
                                   <span className="badge" style={{ background: '#FEF3C7', color: '#D97706' }}>
                                     🏖️ Leave
+                                  </span>
+                                )}
+                                {(rec.isLate || rec.lateMinutes > 0) && (
+                                  <span className="badge" style={{ marginLeft: '4px', background: '#FEF3C7', color: '#D97706', fontWeight: 800, border: '1px solid #FCD34D' }}>
+                                    ⚠️ Late {rec.lateMinutes}m
                                   </span>
                                 )}
                                 {rec.isManual && (

@@ -60,7 +60,10 @@ function getDefaults() {
     activeDrawerSession: null,
     drawerHistory: [],
     attendance: [],
-    terminalKey: "IPS-TAXILA-COUNTER-KEY-2026"
+    terminalKey: "IPS-TAXILA-COUNTER-KEY-2026",
+    shopOpenTime: "09:00",
+    graceMinutes: 15,
+    morningOpener: "Alex"
   };
 }
 
@@ -196,6 +199,7 @@ export default function App() {
                 const isDrawer = s.customer === '__DRAWER_SESSION__' || (s.id && String(s.id).startsWith('DRAWER-'));
                 const isConfig = s.customer === '__SYSTEM_AUTH__' || s.id === 'CFG-ADMIN-AUTH';
                 const isTerminalConfig = s.customer === '__TERMINAL_AUTH__' || s.id === 'CFG-TERMINAL-AUTH';
+                const isShopHoursConfig = s.customer === '__SHOP_HOURS__' || s.id === 'CFG-SHOP-HOURS';
                 const isAttendance = s.customer === '__ATTENDANCE__' || (s.id && String(s.id).startsWith('ATT-'));
 
                 if (isConfig) {
@@ -205,6 +209,12 @@ export default function App() {
                 } else if (isTerminalConfig) {
                   if (s.items && s.items[0] && s.items[0].terminalKey) {
                     updated.terminalKey = s.items[0].terminalKey;
+                  }
+                } else if (isShopHoursConfig) {
+                  if (s.items && s.items[0]) {
+                    if (s.items[0].shopOpenTime) updated.shopOpenTime = s.items[0].shopOpenTime;
+                    if (s.items[0].graceMinutes != null) updated.graceMinutes = Number(s.items[0].graceMinutes);
+                    if (s.items[0].morningOpener) updated.morningOpener = s.items[0].morningOpener;
                   }
                 } else if (isAttendance) {
                   if (s.items && s.items[0]) {
@@ -320,6 +330,7 @@ export default function App() {
           const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
           const isConfig = row.customer === '__SYSTEM_AUTH__' || row.id === 'CFG-ADMIN-AUTH';
           const isTerminalConfig = row.customer === '__TERMINAL_AUTH__' || row.id === 'CFG-TERMINAL-AUTH';
+          const isShopHoursConfig = row.customer === '__SHOP_HOURS__' || row.id === 'CFG-SHOP-HOURS';
           const isAttendance = row.customer === '__ATTENDANCE__' || (row.id && String(row.id).startsWith('ATT-'));
 
           if (isConfig) {
@@ -329,6 +340,15 @@ export default function App() {
           } else if (isTerminalConfig) {
             if (row.items && row.items[0] && row.items[0].terminalKey) {
               setState(prev => ({ ...prev, terminalKey: row.items[0].terminalKey }));
+            }
+          } else if (isShopHoursConfig) {
+            if (row.items && row.items[0]) {
+              setState(prev => ({
+                ...prev,
+                shopOpenTime: row.items[0].shopOpenTime || prev.shopOpenTime,
+                graceMinutes: row.items[0].graceMinutes != null ? Number(row.items[0].graceMinutes) : prev.graceMinutes,
+                morningOpener: row.items[0].morningOpener || prev.morningOpener
+              }));
             }
           } else if (isAttendance) {
             const attData = (row.items && row.items[0]) || row;
@@ -387,6 +407,7 @@ export default function App() {
           const isDrawer = row.customer === '__DRAWER_SESSION__' || (row.id && String(row.id).startsWith('DRAWER-'));
           const isConfig = row.customer === '__SYSTEM_AUTH__' || row.id === 'CFG-ADMIN-AUTH';
           const isTerminalConfig = row.customer === '__TERMINAL_AUTH__' || row.id === 'CFG-TERMINAL-AUTH';
+          const isShopHoursConfig = row.customer === '__SHOP_HOURS__' || row.id === 'CFG-SHOP-HOURS';
           const isAttendance = row.customer === '__ATTENDANCE__' || (row.id && String(row.id).startsWith('ATT-'));
 
           if (isConfig) {
@@ -396,6 +417,15 @@ export default function App() {
           } else if (isTerminalConfig) {
             if (row.items && row.items[0] && row.items[0].terminalKey) {
               setState(prev => ({ ...prev, terminalKey: row.items[0].terminalKey }));
+            }
+          } else if (isShopHoursConfig) {
+            if (row.items && row.items[0]) {
+              setState(prev => ({
+                ...prev,
+                shopOpenTime: row.items[0].shopOpenTime || prev.shopOpenTime,
+                graceMinutes: row.items[0].graceMinutes != null ? Number(row.items[0].graceMinutes) : prev.graceMinutes,
+                morningOpener: row.items[0].morningOpener || prev.morningOpener
+              }));
             }
           } else if (isAttendance) {
             const attData = (row.items && row.items[0]) || row;
@@ -1024,17 +1054,44 @@ export default function App() {
 
   const handleClockIn = async ({ staff, note }) => {
     const today = new Date().toISOString().slice(0, 10);
+    const nowTs = Date.now();
+    const nowObj = new Date(nowTs);
+
+    // Automatic Late calculation based on shopOpenTime and graceMinutes
+    const shopOpenTimeStr = state.shopOpenTime || "09:00";
+    const graceMin = Number(state.graceMinutes != null ? state.graceMinutes : 15);
+    const [openH, openM] = shopOpenTimeStr.split(':').map(Number);
+
+    const expectedOpenDate = new Date(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate(), openH, openM, 0);
+    const expectedOpenTs = expectedOpenDate.getTime();
+    const thresholdTs = expectedOpenTs + (graceMin * 60000);
+
+    let isLate = false;
+    let lateMinutes = 0;
+    if (nowTs > thresholdTs) {
+      isLate = true;
+      lateMinutes = Math.max(0, Math.round((nowTs - expectedOpenTs) / 60000));
+    }
+
+    let finalNotes = (note || '').trim();
+    if (isLate) {
+      const lateStr = `⚠️ Late by ${lateMinutes}m (PC clock-in at ${nowObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })})`;
+      finalNotes = finalNotes ? `${finalNotes} · ${lateStr}` : lateStr;
+    }
+
     const newRecord = {
-      id: "ATT-" + Date.now(),
-      ts: Date.now(),
+      id: "ATT-" + nowTs,
+      ts: nowTs,
       staff,
       date: today,
-      clockIn: Date.now(),
+      clockIn: nowTs,
       clockOut: null,
       breaks: [],
       totalWorkMinutes: 0,
       status: 'clocked_in',
-      notes: (note || '').trim(),
+      isLate,
+      lateMinutes,
+      notes: finalNotes,
       isManual: false
     };
 
@@ -1216,6 +1273,38 @@ export default function App() {
         await supabase.from('sales').delete().eq('id', attendanceId);
       } catch (err) {
         console.error('Error deleting attendance record in Supabase:', err);
+      }
+    }
+  };
+
+  const handleUpdateShopHours = async ({ shopOpenTime, graceMinutes, morningOpener }) => {
+    const nextState = {
+      ...state,
+      shopOpenTime: shopOpenTime || state.shopOpenTime || "09:00",
+      graceMinutes: Number(graceMinutes != null ? graceMinutes : 15),
+      morningOpener: morningOpener || state.morningOpener || "Alex"
+    };
+    setState(nextState);
+
+    if (supabase) {
+      try {
+        await supabase.from('sales').upsert([{
+          id: 'CFG-SHOP-HOURS',
+          ts: Date.now(),
+          staff: 'Admin',
+          customer: '__SHOP_HOURS__',
+          phone: 'Shop Hours Config',
+          items: [{
+            shopOpenTime: nextState.shopOpenTime,
+            graceMinutes: nextState.graceMinutes,
+            morningOpener: nextState.morningOpener
+          }],
+          total: 0,
+          paid: 0,
+          balance: 0
+        }]);
+      } catch (err) {
+        console.error('Error saving shop hours to Supabase:', err);
       }
     }
   };
@@ -1488,6 +1577,7 @@ export default function App() {
           onAuthorizeTerminal={handleAuthorizeCurrentTerminal}
           onRevokeTerminal={handleRevokeCurrentTerminal}
           onRegenerateTerminalKey={handleRegenerateTerminalKey}
+          onUpdateShopHours={handleUpdateShopHours}
         />
       )}
 

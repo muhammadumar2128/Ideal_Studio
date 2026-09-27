@@ -1556,6 +1556,13 @@ export default function TeamPOSView({
                   {!currentStaffPunch ? (
                     /* CASE 1: NOT CLOCKED IN YET */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '10px', fontSize: '13px' }}>
+                        <span style={{ color: 'var(--muted)' }}>⏰ Scheduled Studio Opening:</span>
+                        <span style={{ fontWeight: 800, color: 'var(--ink)' }}>
+                          {state.shopOpenTime || "09:00"} AM {state.morningOpener ? `(Opener: ${state.morningOpener})` : ''}
+                        </span>
+                      </div>
+
                       <div className="field">
                         <label>Shift Notes (optional)</label>
                         <input
