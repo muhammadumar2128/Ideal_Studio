@@ -121,13 +121,20 @@ export default function AdminDashboard({
   const [shopOpenTimeVal, setShopOpenTimeVal] = useState(state.shopOpenTime || "09:00");
   const [graceMinutesVal, setGraceMinutesVal] = useState(state.graceMinutes != null ? state.graceMinutes : 15);
   const [morningOpenerVal, setMorningOpenerVal] = useState(state.morningOpener || "Alex");
+  const [staffSchedulesVal, setStaffSchedulesVal] = useState(state.staffSchedules || {
+    "Alex": "09:00",
+    "Kabeer": "18:00",
+    "Umar": "09:00",
+    "Owner - Usman": "10:00"
+  });
   const [isSavingHours, setIsSavingHours] = useState(false);
 
   useEffect(() => {
     if (state.shopOpenTime) setShopOpenTimeVal(state.shopOpenTime);
     if (state.graceMinutes != null) setGraceMinutesVal(state.graceMinutes);
     if (state.morningOpener) setMorningOpenerVal(state.morningOpener);
-  }, [state.shopOpenTime, state.graceMinutes, state.morningOpener]);
+    if (state.staffSchedules) setStaffSchedulesVal(state.staffSchedules);
+  }, [state.shopOpenTime, state.graceMinutes, state.morningOpener, state.staffSchedules]);
 
   // Attendance and Terminal security states
   const [attSearchBox, setAttSearchBox] = useState('');
@@ -1827,13 +1834,13 @@ export default function AdminDashboard({
 
         // Detect if shop has not been opened yet today past scheduled time
         const unpunctualShopAlert = (() => {
-          const todayStr = new Date().toISOString().slice(0, 10);
+          const n = new Date();
+          const todayStr = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
           const todayPunches = (state.attendance || []).filter(a => a.date === todayStr && a.status !== 'leave' && a.status !== 'absent');
           if (todayPunches.length > 0) return null; // Already opened!
 
           const [h, m] = (state.shopOpenTime || "09:00").split(':').map(Number);
           const grace = Number(state.graceMinutes != null ? state.graceMinutes : 15);
-          const n = new Date();
           const scheduledDate = new Date(n.getFullYear(), n.getMonth(), n.getDate(), h, m, 0);
           const deadlineDate = new Date(scheduledDate.getTime() + (grace * 60000));
 
@@ -1930,13 +1937,18 @@ export default function AdminDashboard({
                 </span>
               </h2>
               <div className="body">
-                <p className="hint" style={{ marginTop: 0 }}>
-                  When the designated morning opener turns on the studio PC and launches the POS, the system automatically checks if it is past the scheduled opening time and records late minutes automatically.
-                </p>
+                <div style={{ background: 'rgba(37, 99, 235, 0.05)', padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(37, 99, 235, 0.15)', marginBottom: '18px' }}>
+                  <div style={{ fontWeight: 800, color: 'var(--accent)', fontSize: '14px', marginBottom: '4px' }}>
+                    ⚡ Morning PC Power-On Auto-Attendance:
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--ink)', lineHeight: 1.5 }}>
+                    When this PC is powered on in the morning and launches the system (or connects to wifi), <strong>{morningOpenerVal}</strong>'s attendance is automatically recorded with the exact time. If past {shopOpenTimeVal} + {graceMinutesVal}m grace, late minutes are logged automatically.
+                  </div>
+                </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px' }}>
                   <div className="field">
-                    <label>Scheduled Shop Opening Time</label>
+                    <label>Studio General Opening Time</label>
                     <input
                       type="time"
                       value={shopOpenTimeVal}
@@ -1946,7 +1958,7 @@ export default function AdminDashboard({
                   </div>
 
                   <div className="field">
-                    <label>Grace Period (Minutes)</label>
+                    <label>Punctuality Grace Period (Minutes)</label>
                     <input
                       type="number"
                       min="0"
@@ -1956,16 +1968,12 @@ export default function AdminDashboard({
                       style={{ fontSize: '16px', fontWeight: 700 }}
                     />
                     <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
-                      e.g. 15 mins allows clock-in up to {(() => {
-                        const [h, m] = (shopOpenTimeVal || "09:00").split(':').map(Number);
-                        const d = new Date(2026, 0, 1, h, m + Number(graceMinutesVal || 0));
-                        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                      })()} without late penalty.
+                      Allows {graceMinutesVal} mins after scheduled shift before counting late penalty.
                     </div>
                   </div>
 
                   <div className="field">
-                    <label>Default Morning Opener Staff</label>
+                    <label>Default Morning Opener Staff (Auto PC Check-In)</label>
                     <select
                       value={morningOpenerVal}
                       onChange={(e) => setMorningOpenerVal(e.target.value)}
@@ -1975,6 +1983,69 @@ export default function AdminDashboard({
                         <option key={name} value={name}>{name}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+
+                {/* INDIVIDUAL STAFF SHIFT SCHEDULES */}
+                <div style={{ borderTop: '1px solid var(--line)', paddingTop: '16px', marginBottom: '18px' }}>
+                  <div style={{ fontWeight: 800, fontSize: '14.5px', color: 'var(--ink)', marginBottom: '6px' }}>
+                    👥 Individual Employee Shift Schedules (Personalized Late Calculation)
+                  </div>
+                  <p style={{ fontSize: '12.5px', color: 'var(--muted)', marginTop: 0, marginBottom: '14px' }}>
+                    Each staff member's punctuality is checked against their own shift start time. For example, Kabeer scheduled at 6:00 PM will only be marked late if clocking in after 6:15 PM!
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                    {state.staff.map(staffName => {
+                      const currentVal = (staffSchedulesVal && staffSchedulesVal[staffName]) || (staffName === morningOpenerVal ? shopOpenTimeVal : "09:00");
+                      const isMorningOpener = staffName === morningOpenerVal;
+                      const [h, m] = (currentVal || "09:00").split(':').map(Number);
+                      const cutoffDate = new Date(2026, 0, 1, h, m + Number(graceMinutesVal || 0));
+                      const cutoffStr = cutoffDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+                      return (
+                        <div
+                          key={staffName}
+                          style={{
+                            padding: '12px 14px',
+                            borderRadius: '10px',
+                            background: isMorningOpener ? 'rgba(37, 99, 235, 0.04)' : 'var(--paper)',
+                            border: isMorningOpener ? '1.5px solid rgba(37, 99, 235, 0.3)' : '1px solid var(--line)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '14px' }}>{staffName}</span>
+                            {isMorningOpener ? (
+                              <span className="badge" style={{ background: '#EFF6FF', color: '#2563EB', fontSize: '11px', fontWeight: 700 }}>
+                                ⭐ Morning Opener
+                              </span>
+                            ) : (
+                              <span className="badge" style={{ background: 'var(--line-soft)', color: 'var(--muted)', fontSize: '11px' }}>
+                                Staff Shift
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                              type="time"
+                              value={currentVal}
+                              onChange={(e) => {
+                                const nextVal = e.target.value;
+                                setStaffSchedulesVal(prev => ({
+                                  ...prev,
+                                  [staffName]: nextVal
+                                }));
+                              }}
+                              style={{ fontSize: '14.5px', fontWeight: 700, flex: 1, padding: '6px 10px' }}
+                            />
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '5px' }}>
+                            On-time until <strong>{cutoffStr}</strong> ({graceMinutesVal}m grace)
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1989,11 +2060,12 @@ export default function AdminDashboard({
                         await onUpdateShopHours({
                           shopOpenTime: shopOpenTimeVal,
                           graceMinutes: Number(graceMinutesVal),
-                          morningOpener: morningOpenerVal
+                          morningOpener: morningOpenerVal,
+                          staffSchedules: staffSchedulesVal
                         });
                       }
                       setIsSavingHours(false);
-                      alert("✅ Studio opening rules saved successfully!");
+                      alert("✅ Studio opening & individual employee shift schedules saved successfully!");
                     }}
                   >
                     💾 Save Opening &amp; Punctuality Rules
@@ -2411,6 +2483,11 @@ export default function AdminDashboard({
                                 {(rec.isLate || rec.lateMinutes > 0) && (
                                   <span className="badge" style={{ marginLeft: '4px', background: '#FEF3C7', color: '#D97706', fontWeight: 800, border: '1px solid #FCD34D' }}>
                                     ⚠️ Late {rec.lateMinutes}m
+                                  </span>
+                                )}
+                                {rec.autoCaptured && (
+                                  <span className="badge" style={{ marginLeft: '4px', background: '#ECFDF5', color: '#059669', fontSize: '10.5px', border: '1px solid #A7F3D0' }}>
+                                    🖥️ PC Boot
                                   </span>
                                 )}
                                 {rec.isManual && (

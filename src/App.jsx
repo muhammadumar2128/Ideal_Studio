@@ -63,7 +63,13 @@ function getDefaults() {
     terminalKey: "IPS-TAXILA-COUNTER-KEY-2026",
     shopOpenTime: "09:00",
     graceMinutes: 15,
-    morningOpener: "Alex"
+    morningOpener: "Alex",
+    staffSchedules: {
+      "Alex": "09:00",
+      "Kabeer": "18:00",
+      "Umar": "09:00",
+      "Owner - Usman": "10:00"
+    }
   };
 }
 
@@ -75,6 +81,11 @@ function loadInitialState() {
       const defs = getDefaults();
       for (let k in defs) {
         if (!(k in parsed)) parsed[k] = defs[k];
+      }
+      if (!parsed.staffSchedules || typeof parsed.staffSchedules !== 'object') {
+        parsed.staffSchedules = { ...defs.staffSchedules };
+      } else {
+        parsed.staffSchedules = { ...defs.staffSchedules, ...parsed.staffSchedules };
       }
       return parsed;
     }
@@ -101,6 +112,13 @@ function fmtDate(ts) {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
+function getTodayDateStr(d = new Date()) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function App() {
   const [state, setState] = useState(loadInitialState);
   const [isPlatformAuth, setIsPlatformAuth] = useState(() => {
@@ -115,6 +133,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('studio_pos_theme') || 'light';
   });
+  const [autoAttToast, setAutoAttToast] = useState(null);
 
   useEffect(() => {
     if (activeModalSale && billFormat === 'invoice') {
@@ -215,6 +234,9 @@ export default function App() {
                     if (s.items[0].shopOpenTime) updated.shopOpenTime = s.items[0].shopOpenTime;
                     if (s.items[0].graceMinutes != null) updated.graceMinutes = Number(s.items[0].graceMinutes);
                     if (s.items[0].morningOpener) updated.morningOpener = s.items[0].morningOpener;
+                    if (s.items[0].staffSchedules && typeof s.items[0].staffSchedules === 'object') {
+                      updated.staffSchedules = { ...updated.staffSchedules, ...s.items[0].staffSchedules };
+                    }
                   }
                 } else if (isAttendance) {
                   if (s.items && s.items[0]) {
@@ -347,7 +369,8 @@ export default function App() {
                 ...prev,
                 shopOpenTime: row.items[0].shopOpenTime || prev.shopOpenTime,
                 graceMinutes: row.items[0].graceMinutes != null ? Number(row.items[0].graceMinutes) : prev.graceMinutes,
-                morningOpener: row.items[0].morningOpener || prev.morningOpener
+                morningOpener: row.items[0].morningOpener || prev.morningOpener,
+                staffSchedules: row.items[0].staffSchedules ? { ...(prev.staffSchedules || {}), ...row.items[0].staffSchedules } : prev.staffSchedules
               }));
             }
           } else if (isAttendance) {
@@ -424,7 +447,8 @@ export default function App() {
                 ...prev,
                 shopOpenTime: row.items[0].shopOpenTime || prev.shopOpenTime,
                 graceMinutes: row.items[0].graceMinutes != null ? Number(row.items[0].graceMinutes) : prev.graceMinutes,
-                morningOpener: row.items[0].morningOpener || prev.morningOpener
+                morningOpener: row.items[0].morningOpener || prev.morningOpener,
+                staffSchedules: row.items[0].staffSchedules ? { ...(prev.staffSchedules || {}), ...row.items[0].staffSchedules } : prev.staffSchedules
               }));
             }
           } else if (isAttendance) {
@@ -1052,30 +1076,52 @@ export default function App() {
     }
   };
 
-  const handleClockIn = async ({ staff, note }) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const nowTs = Date.now();
-    const nowObj = new Date(nowTs);
-
-    // Automatic Late calculation based on shopOpenTime and graceMinutes
-    const shopOpenTimeStr = state.shopOpenTime || "09:00";
+  // Helper to calculate shift punctuality for any staff member
+  const calculateStaffPunctuality = (staffName, punchTs = Date.now()) => {
+    const punchDate = new Date(punchTs);
+    const staffShiftTime = (state.staffSchedules && state.staffSchedules[staffName])
+      || (staffName === (state.morningOpener || "Alex") ? (state.shopOpenTime || "09:00") : "09:00");
     const graceMin = Number(state.graceMinutes != null ? state.graceMinutes : 15);
-    const [openH, openM] = shopOpenTimeStr.split(':').map(Number);
+    const [h, m] = (staffShiftTime || "09:00").split(':').map(Number);
 
-    const expectedOpenDate = new Date(nowObj.getFullYear(), nowObj.getMonth(), nowObj.getDate(), openH, openM, 0);
-    const expectedOpenTs = expectedOpenDate.getTime();
-    const thresholdTs = expectedOpenTs + (graceMin * 60000);
+    const scheduledDate = new Date(punchDate.getFullYear(), punchDate.getMonth(), punchDate.getDate(), h, m, 0);
+    const scheduledTs = scheduledDate.getTime();
+    const thresholdTs = scheduledTs + (graceMin * 60000);
 
     let isLate = false;
     let lateMinutes = 0;
-    if (nowTs > thresholdTs) {
+    if (punchTs > thresholdTs) {
       isLate = true;
-      lateMinutes = Math.max(0, Math.round((nowTs - expectedOpenTs) / 60000));
+      lateMinutes = Math.max(0, Math.round((punchTs - scheduledTs) / 60000));
     }
 
+    const scheduledDisplay = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const punchDisplay = punchDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    return {
+      isLate,
+      lateMinutes,
+      scheduledTime: staffShiftTime,
+      scheduledDisplay,
+      punchDisplay
+    };
+  };
+
+  const handleClockIn = async ({ staff, note, isAuto = false }) => {
+    const nowTs = Date.now();
+    const today = getTodayDateStr(new Date(nowTs));
+    const punctuality = calculateStaffPunctuality(staff, nowTs);
+
     let finalNotes = (note || '').trim();
-    if (isLate) {
-      const lateStr = `⚠️ Late by ${lateMinutes}m (PC clock-in at ${nowObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })})`;
+    if (isAuto) {
+      const autoStr = punctuality.isLate
+        ? `⚠️ PC Boot Auto-Attendance · Late by ${punctuality.lateMinutes}m (Shift: ${punctuality.scheduledDisplay} · System on: ${punctuality.punchDisplay})`
+        : `✅ PC Boot Auto-Attendance · On-Time (Shift: ${punctuality.scheduledDisplay} · System on: ${punctuality.punchDisplay})`;
+      finalNotes = finalNotes ? `${finalNotes} · ${autoStr}` : autoStr;
+    } else {
+      const lateStr = punctuality.isLate
+        ? `⚠️ Late by ${punctuality.lateMinutes}m (Shift: ${punctuality.scheduledDisplay} · Clock-in at ${punctuality.punchDisplay})`
+        : `✅ On-Time (Shift: ${punctuality.scheduledDisplay} · Clock-in at ${punctuality.punchDisplay})`;
       finalNotes = finalNotes ? `${finalNotes} · ${lateStr}` : lateStr;
     }
 
@@ -1089,10 +1135,11 @@ export default function App() {
       breaks: [],
       totalWorkMinutes: 0,
       status: 'clocked_in',
-      isLate,
-      lateMinutes,
+      isLate: punctuality.isLate,
+      lateMinutes: punctuality.lateMinutes,
       notes: finalNotes,
-      isManual: false
+      isManual: false,
+      autoCaptured: Boolean(isAuto)
     };
 
     const nextAttendance = [newRecord, ...(state.attendance || [])];
@@ -1117,6 +1164,72 @@ export default function App() {
     }
     return newRecord;
   };
+
+  // Automatic PC boot / wifi connection morning opener attendance trigger
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkAndTriggerAutoAttendance = async () => {
+      const today = getTodayDateStr();
+      const opener = state.morningOpener || "Alex";
+      const autoKey = `ideal_studio_auto_clockin_${opener}_${today}`;
+
+      // Check if opener already has a punch for today in state
+      const hasPunchToday = (state.attendance || []).some(
+        a => a.staff === opener && a.date === today && a.status !== 'absent' && a.status !== 'leave'
+      );
+      const alreadyFlagged = localStorage.getItem(autoKey);
+
+      if (hasPunchToday || alreadyFlagged) return;
+
+      // Lock via localStorage immediately to prevent double execution during re-renders or tab switches
+      localStorage.setItem(autoKey, Date.now().toString());
+
+      try {
+        const res = await handleClockIn({ staff: opener, isAuto: true });
+        if (isMounted && res) {
+          const punctuality = calculateStaffPunctuality(opener, res.clockIn);
+          setAutoAttToast({
+            staff: opener,
+            punchTime: punctuality.punchDisplay,
+            shiftTime: punctuality.scheduledDisplay,
+            isLate: punctuality.isLate,
+            lateMinutes: punctuality.lateMinutes
+          });
+        }
+      } catch (err) {
+        console.error('Auto opener clock-in failed:', err);
+      }
+    };
+
+    // 1. Trigger immediately on system launch / browser load
+    checkAndTriggerAutoAttendance();
+
+    // 2. Also listen for wifi/network connection in the morning and sync attendance to Supabase
+    const handleOnline = () => {
+      checkAndTriggerAutoAttendance();
+      if (supabase && state.attendance && state.attendance.length > 0) {
+        const unsynced = state.attendance.slice(0, 30).map(r => ({
+          id: r.id,
+          ts: r.ts,
+          staff: r.staff,
+          customer: '__ATTENDANCE__',
+          phone: r.date,
+          items: [r],
+          total: 0,
+          paid: 0,
+          balance: 0
+        }));
+        supabase.from('sales').upsert(unsynced).catch(err => console.warn('Offline attendance cloud sync error:', err));
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [state.morningOpener, state.shopOpenTime, state.staffSchedules]);
 
   const handleToggleBreak = async (attendanceId, note) => {
     const current = (state.attendance || []).find(a => a.id === attendanceId);
@@ -1277,12 +1390,18 @@ export default function App() {
     }
   };
 
-  const handleUpdateShopHours = async ({ shopOpenTime, graceMinutes, morningOpener }) => {
+  const handleUpdateShopHours = async ({ shopOpenTime, graceMinutes, morningOpener, staffSchedules }) => {
     const nextState = {
       ...state,
       shopOpenTime: shopOpenTime || state.shopOpenTime || "09:00",
       graceMinutes: Number(graceMinutes != null ? graceMinutes : 15),
-      morningOpener: morningOpener || state.morningOpener || "Alex"
+      morningOpener: morningOpener || state.morningOpener || "Alex",
+      staffSchedules: staffSchedules || state.staffSchedules || {
+        "Alex": "09:00",
+        "Kabeer": "18:00",
+        "Umar": "09:00",
+        "Owner - Usman": "10:00"
+      }
     };
     setState(nextState);
 
@@ -1297,7 +1416,8 @@ export default function App() {
           items: [{
             shopOpenTime: nextState.shopOpenTime,
             graceMinutes: nextState.graceMinutes,
-            morningOpener: nextState.morningOpener
+            morningOpener: nextState.morningOpener,
+            staffSchedules: nextState.staffSchedules
           }],
           total: 0,
           paid: 0,
@@ -1448,6 +1568,53 @@ export default function App() {
   return (
     <>
       <div className="wrap">
+      {/* MORNING PC POWER-ON ATTENDANCE BANNER */}
+      {autoAttToast && (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '12px 18px',
+            borderRadius: '12px',
+            background: autoAttToast.isLate ? '#FFFBEB' : '#ECFDF5',
+            border: autoAttToast.isLate ? '1.5px solid #F59E0B' : '1.5px solid #10B981',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.06)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '24px' }}>{autoAttToast.isLate ? '⚠️' : '🖥️'}</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '14px', color: autoAttToast.isLate ? '#B45309' : '#065F46' }}>
+                Studio Morning PC Attendance Auto-Recorded: {autoAttToast.staff}
+              </div>
+              <div style={{ fontSize: '12.5px', color: autoAttToast.isLate ? '#92400E' : '#047857', marginTop: '2px' }}>
+                System booted at <strong>{autoAttToast.punchTime}</strong> · Scheduled shift: <strong>{autoAttToast.shiftTime}</strong>
+                {autoAttToast.isLate ? (
+                  <span style={{ fontWeight: 800, marginLeft: '6px', background: '#FDE68A', padding: '1px 6px', borderRadius: '4px' }}>
+                    Late by {autoAttToast.lateMinutes} min(s)
+                  </span>
+                ) : (
+                  <span style={{ fontWeight: 800, marginLeft: '6px', color: '#059669' }}>
+                    ✅ On Time
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ padding: '4px 12px', height: 'auto', fontSize: '12px', fontWeight: 700 }}
+            onClick={() => setAutoAttToast(null)}
+          >
+            ✕ Dismiss
+          </button>
+        </div>
+      )}
+
       {/* GLOBAL HEADER */}
       <header className="top">
         <div className="brand">

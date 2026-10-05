@@ -1556,11 +1556,27 @@ export default function TeamPOSView({
                   {!currentStaffPunch ? (
                     /* CASE 1: NOT CLOCKED IN YET */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '10px', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--muted)' }}>⏰ Scheduled Studio Opening:</span>
-                        <span style={{ fontWeight: 800, color: 'var(--ink)' }}>
-                          {state.shopOpenTime || "09:00"} AM {state.morningOpener ? `(Opener: ${state.morningOpener})` : ''}
-                        </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 14px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '10px', fontSize: '13px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--muted)' }}>⏰ Scheduled Shift ({attStaff}):</span>
+                          <span style={{ fontWeight: 800, color: 'var(--ink)' }}>
+                            {(() => {
+                              const timeStr = (state.staffSchedules && state.staffSchedules[attStaff])
+                                || (attStaff === (state.morningOpener || "Alex") ? (state.shopOpenTime || "09:00") : "09:00");
+                              const [h, m] = (timeStr || "09:00").split(':').map(Number);
+                              const d = new Date(2026, 0, 1, h, m);
+                              return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                            })()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>Grace: {state.graceMinutes || 15} mins</span>
+                          {attStaff === (state.morningOpener || "Alex") && (
+                            <span style={{ color: '#059669', fontWeight: 700 }}>
+                              ⚡ Morning Opener · Auto PC Check-in
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="field">
@@ -1723,6 +1739,16 @@ export default function TeamPOSView({
                                   {rec.status === 'leave' && (
                                     <span className="badge" style={{ background: '#FEF3C7', color: '#D97706' }}>
                                       🏖️ Leave
+                                    </span>
+                                  )}
+                                  {(rec.isLate || rec.lateMinutes > 0) && (
+                                    <span className="badge" style={{ marginLeft: '4px', background: '#FEF3C7', color: '#D97706', fontWeight: 800 }}>
+                                      ⚠️ Late {rec.lateMinutes}m
+                                    </span>
+                                  )}
+                                  {rec.autoCaptured && (
+                                    <span className="badge" style={{ marginLeft: '4px', background: '#ECFDF5', color: '#059669', fontSize: '10px' }}>
+                                      🖥️ Auto PC
                                     </span>
                                   )}
                                 </td>
