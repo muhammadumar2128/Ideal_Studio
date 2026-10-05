@@ -461,10 +461,10 @@ export default function TeamPOSView({
     return realBalance > 0;
   }).length;
 
-  // Today totals (excludes voided/duplicate sales)
+  // Today totals (excludes voided/duplicate sales) - actual revenue received today
   const todaySalesTotal = salesList
     .filter(s => !s.isVoid && isSameDay(new Date(s.ts), now))
-    .reduce((sum, s) => sum + Number(s.total || 0), 0);
+    .reduce((sum, s) => sum + Number(s.paid != null ? s.paid : s.total), 0);
 
   const todayExpensesTotal = expensesList
     .filter(e => isSameDay(new Date(e.ts), now))

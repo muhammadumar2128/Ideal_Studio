@@ -1170,6 +1170,9 @@ export default function App() {
     let isMounted = true;
 
     const checkAndTriggerAutoAttendance = async () => {
+      // If Supabase is configured but initial cloud fetch is still running, wait for cloudSynced to avoid duplicate punches on fresh/cleared sessions
+      if (supabase && !cloudSynced) return;
+
       const today = getTodayDateStr();
       const opener = state.morningOpener || "Alex";
       const autoKey = `ideal_studio_auto_clockin_${opener}_${today}`;
@@ -1205,6 +1208,11 @@ export default function App() {
     // 1. Trigger immediately on system launch / browser load
     checkAndTriggerAutoAttendance();
 
+    // Fallback timer: if offline or Supabase connection is delayed beyond 2.5s, proceed with local check
+    const offlineFallbackTimer = setTimeout(() => {
+      if (isMounted) checkAndTriggerAutoAttendance();
+    }, 2500);
+
     // 2. Also listen for wifi/network connection in the morning and sync attendance to Supabase
     const handleOnline = () => {
       checkAndTriggerAutoAttendance();
@@ -1227,9 +1235,10 @@ export default function App() {
     window.addEventListener('online', handleOnline);
     return () => {
       isMounted = false;
+      clearTimeout(offlineFallbackTimer);
       window.removeEventListener('online', handleOnline);
     };
-  }, [state.morningOpener, state.shopOpenTime, state.staffSchedules]);
+  }, [state.morningOpener, state.shopOpenTime, state.staffSchedules, cloudSynced]);
 
   const handleToggleBreak = async (attendanceId, note) => {
     const current = (state.attendance || []).find(a => a.id === attendanceId);

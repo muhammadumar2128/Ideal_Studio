@@ -22,6 +22,18 @@ function fmtMonthKey(monthKey) {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+function downloadFile(fileName, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
 function isSameDay(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 }
@@ -270,28 +282,27 @@ export default function AdminDashboard({
       if (isThisMonth(d)) discMonth += saleDiscount;
     }
 
-    sTotalAll += total;
+    sTotalAll += paid;
     totalPendingBal += bal;
     if (bal <= 0) paidCount++;
 
-    if (isSameDay(d, now)) sToday += total;
-    if (isYesterday(d)) sYesterday += total;
-    if (isThisWeek(d)) sWeek += total;
-    if (isLastWeek(d)) sLastWeek += total;
-    if (isThisMonth(d)) sMonth += total;
-    if (isLastMonth(d)) sLastMonth += total;
+    if (isSameDay(d, now)) sToday += paid;
+    if (isYesterday(d)) sYesterday += paid;
+    if (isThisWeek(d)) sWeek += paid;
+    if (isLastWeek(d)) sLastWeek += paid;
+    if (isThisMonth(d)) sMonth += paid;
+    if (isLastMonth(d)) sLastMonth += paid;
 
     // Staff aggregation
     const staffName = s.staff || 'Unknown';
     if (!staffPerformance[staffName]) {
       staffPerformance[staffName] = { revenue: 0, count: 0, discounts: 0 };
     }
-    staffPerformance[staffName].revenue += total;
+    staffPerformance[staffName].revenue += paid;
     staffPerformance[staffName].count += 1;
     if (saleDiscount > 0) {
       staffPerformance[staffName].discounts += saleDiscount;
     }
-    staffPerformance[staffName].count += 1;
 
     // Category aggregation
     if (s.items && Array.isArray(s.items)) {
@@ -344,7 +355,7 @@ export default function AdminDashboard({
     return ym === selectedMonthKey;
   });
 
-  const selGrossSales = selectedSales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const selGrossSales = selectedSales.reduce((sum, s) => sum + Number(s.paid != null ? s.paid : s.total), 0);
   const selExpenses = selectedExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const selNetProfit = selGrossSales - selExpenses;
   const selOrderCount = selectedSales.length;
@@ -362,7 +373,7 @@ export default function AdminDashboard({
     const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
     const dayRevenue = salesList
       .filter(s => !s.isVoid && isSameDay(new Date(s.ts), date))
-      .reduce((sum, s) => sum + Number(s.total || 0), 0);
+      .reduce((sum, s) => sum + Number(s.paid != null ? s.paid : s.total), 0);
     const dayExpense = expensesList
       .filter(e => isSameDay(new Date(e.ts), date))
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
