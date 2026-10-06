@@ -1123,9 +1123,16 @@ export default function App() {
   };
 
   const handleClockIn = async ({ staff, note, isAuto = false }) => {
+    const isAuth = isCurrentTerminalAuthorized();
     // Only allow auto-attendance to proceed on authorized studio counter PC (auth PC)
-    if (isAuto && !isCurrentTerminalAuthorized()) {
+    if (isAuto && !isAuth) {
       console.warn('Auto attendance aborted: device is not an authorized counter terminal (Auth PC).');
+      return null;
+    }
+    // Also protect manual shift clock-ins: non-auth devices cannot clock in unless admin is logged in
+    if (!isAuto && !isAuth && !adminUser) {
+      console.warn('Manual clock-in rejected: device is not an authorized counter terminal (Auth PC).');
+      alert('🔒 Access Denied: Attendance can only be recorded on the official Studio Counter Terminal PC. Remote check-in from home or mobile is blocked.');
       return null;
     }
     const nowTs = Date.now();
@@ -1266,6 +1273,10 @@ export default function App() {
   }, [state.morningOpener, state.shopOpenTime, state.staffSchedules, state.terminalKey, cloudSynced, terminalAuthVersion]);
 
   const handleToggleBreak = async (attendanceId, note) => {
+    if (!isCurrentTerminalAuthorized() && !adminUser) {
+      alert('🔒 Access Denied: Attendance actions can only be recorded on the official Studio Counter Terminal PC.');
+      return;
+    }
     const current = (state.attendance || []).find(a => a.id === attendanceId);
     if (!current) return;
 
@@ -1316,6 +1327,10 @@ export default function App() {
   };
 
   const handleClockOut = async (attendanceId, note) => {
+    if (!isCurrentTerminalAuthorized() && !adminUser) {
+      alert('🔒 Access Denied: Attendance actions can only be recorded on the official Studio Counter Terminal PC.');
+      return;
+    }
     const current = (state.attendance || []).find(a => a.id === attendanceId);
     if (!current) return;
 
@@ -1748,6 +1763,8 @@ export default function App() {
           onToggleBreak={handleToggleBreak}
           onClockOut={handleClockOut}
           onAuthorizeTerminal={handleAuthorizeCurrentTerminal}
+          isTerminalAuthorized={isCurrentTerminalAuthorized() || !!adminUser}
+          isDeviceAuthorized={isCurrentTerminalAuthorized()}
         />
       ) : (
         <AdminDashboard

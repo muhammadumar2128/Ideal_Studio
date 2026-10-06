@@ -72,7 +72,9 @@ export default function TeamPOSView({
   onClockIn,
   onToggleBreak,
   onClockOut,
-  onAuthorizeTerminal
+  onAuthorizeTerminal,
+  isTerminalAuthorized: propIsTerminalAuthorized,
+  isDeviceAuthorized: propIsDeviceAuthorized
 }) {
   const [teamTab, setTeamTab] = useState('new'); // 'new', 'records', 'expenses', 'attendance'
   const [cart, setCart] = useState([]);
@@ -91,7 +93,15 @@ export default function TeamPOSView({
     return () => clearInterval(timer);
   }, []);
 
-  const isTerminalAuthorized = (terminalAuthToken === (state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026')) || isAdminLoggedIn;
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setTerminalAuthToken(localStorage.getItem('ideal_studio_counter_terminal_token'));
+    }
+  }, [state.terminalKey, propIsTerminalAuthorized]);
+
+  const isTerminalAuthorized = typeof propIsTerminalAuthorized === 'boolean'
+    ? propIsTerminalAuthorized
+    : ((terminalAuthToken === (state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026')) || isAdminLoggedIn);
 
   const todayDateStr = getTodayDateStr();
   const todayAttendance = (state.attendance || []).filter(a => a.date === todayDateStr);

@@ -159,6 +159,12 @@ export default function AdminDashboard({
     return typeof window !== 'undefined' && localStorage.getItem('ideal_studio_counter_terminal_token') === (state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026');
   });
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsCurrentDeviceAuthorized(localStorage.getItem('ideal_studio_counter_terminal_token') === (state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026'));
+    }
+  }, [state.terminalKey]);
+
   const formatPunchTime = (ts) => {
     if (!ts) return '—';
     const d = new Date(ts);
