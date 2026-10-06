@@ -128,6 +128,18 @@ export default function App() {
   const [adminUser, setAdminUser] = useState(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [cloudSynced, setCloudSynced] = useState(false);
+  const [terminalAuthVersion, setTerminalAuthVersion] = useState(0);
+
+  const isCurrentTerminalAuthorized = () => {
+    try {
+      if (typeof window === 'undefined') return false;
+      const token = localStorage.getItem('ideal_studio_counter_terminal_token');
+      const expectedKey = state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026';
+      return Boolean(token && token === expectedKey);
+    } catch (e) {
+      return false;
+    }
+  };
   const [activeModalSale, setActiveModalSale] = useState(null);
   const [billFormat, setBillFormat] = useState('receipt'); // 'receipt' (standard 80mm slip) or 'invoice' (formal A4 invoice)
   const [theme, setTheme] = useState(() => {
@@ -1028,6 +1040,7 @@ export default function App() {
   const handleAuthorizeCurrentTerminal = () => {
     try {
       localStorage.setItem('ideal_studio_counter_terminal_token', state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026');
+      setTerminalAuthVersion(v => v + 1);
       return true;
     } catch (e) {
       console.error(e);
@@ -1038,6 +1051,7 @@ export default function App() {
   const handleRevokeCurrentTerminal = () => {
     try {
       localStorage.removeItem('ideal_studio_counter_terminal_token');
+      setTerminalAuthVersion(v => v + 1);
       return true;
     } catch (e) {
       console.error(e);
@@ -1053,6 +1067,7 @@ export default function App() {
     // Auto-authorize the current device since admin is performing this action
     try {
       localStorage.setItem('ideal_studio_counter_terminal_token', newKey);
+      setTerminalAuthVersion(v => v + 1);
     } catch (e) {
       console.warn(e);
     }
@@ -1108,6 +1123,11 @@ export default function App() {
   };
 
   const handleClockIn = async ({ staff, note, isAuto = false }) => {
+    // Only allow auto-attendance to proceed on authorized studio counter PC (auth PC)
+    if (isAuto && !isCurrentTerminalAuthorized()) {
+      console.warn('Auto attendance aborted: device is not an authorized counter terminal (Auth PC).');
+      return null;
+    }
     const nowTs = Date.now();
     const today = getTodayDateStr(new Date(nowTs));
     const punctuality = calculateStaffPunctuality(staff, nowTs);
@@ -1170,6 +1190,11 @@ export default function App() {
     let isMounted = true;
 
     const checkAndTriggerAutoAttendance = async () => {
+      // Security Check: Auto-attendance MUST ONLY run on the authorized studio counter PC (auth PC)
+      if (!isCurrentTerminalAuthorized()) {
+        return;
+      }
+
       // If Supabase is configured but initial cloud fetch is still running, wait for cloudSynced to avoid duplicate punches on fresh/cleared sessions
       if (supabase && !cloudSynced) return;
 
@@ -1205,7 +1230,7 @@ export default function App() {
       }
     };
 
-    // 1. Trigger immediately on system launch / browser load
+    // 1. Trigger immediately on system launch / browser load (only if on auth PC)
     checkAndTriggerAutoAttendance();
 
     // Fallback timer: if offline or Supabase connection is delayed beyond 2.5s, proceed with local check
@@ -1238,7 +1263,7 @@ export default function App() {
       clearTimeout(offlineFallbackTimer);
       window.removeEventListener('online', handleOnline);
     };
-  }, [state.morningOpener, state.shopOpenTime, state.staffSchedules, cloudSynced]);
+  }, [state.morningOpener, state.shopOpenTime, state.staffSchedules, state.terminalKey, cloudSynced, terminalAuthVersion]);
 
   const handleToggleBreak = async (attendanceId, note) => {
     const current = (state.attendance || []).find(a => a.id === attendanceId);

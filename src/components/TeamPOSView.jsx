@@ -1572,8 +1572,8 @@ export default function TeamPOSView({
                         <div style={{ fontSize: '11.5px', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>Grace: {state.graceMinutes || 15} mins</span>
                           {attStaff === (state.morningOpener || "Alex") && (
-                            <span style={{ color: '#059669', fontWeight: 700 }}>
-                              ⚡ Morning Opener · Auto PC Check-in
+                            <span style={{ color: isTerminalAuthorized ? '#059669' : '#D97706', fontWeight: 700 }}>
+                              ⚡ Morning Opener · Auto PC Check-in {isTerminalAuthorized ? '(Auth PC Active)' : '(Requires Auth PC)'}
                             </span>
                           )}
                         </div>

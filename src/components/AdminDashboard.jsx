@@ -1950,10 +1950,38 @@ export default function AdminDashboard({
               <div className="body">
                 <div style={{ background: 'rgba(37, 99, 235, 0.05)', padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(37, 99, 235, 0.15)', marginBottom: '18px' }}>
                   <div style={{ fontWeight: 800, color: 'var(--accent)', fontSize: '14px', marginBottom: '4px' }}>
-                    ⚡ Morning PC Power-On Auto-Attendance:
+                    ⚡ Morning PC Power-On Auto-Attendance (Auth PC Restricted):
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--ink)', lineHeight: 1.5 }}>
-                    When this PC is powered on in the morning and launches the system (or connects to wifi), <strong>{morningOpenerVal}</strong>'s attendance is automatically recorded with the exact time. If past {shopOpenTimeVal} + {graceMinutesVal}m grace, late minutes are logged automatically.
+                    When the <strong>Authorized Counter PC (Auth PC)</strong> is powered on in the morning and launches the system (or connects to wifi), <strong>{morningOpenerVal}</strong>'s attendance is automatically recorded with the exact timestamp. If past {shopOpenTimeVal} + {graceMinutesVal}m grace, late minutes are logged automatically. Remote or unauthorized devices are blocked from auto-triggering.
+                  </div>
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(37, 99, 235, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>Current Machine:</span>
+                      {isCurrentDeviceAuthorized ? (
+                        <span style={{ color: '#059669', background: '#ECFDF5', padding: '3px 8px', borderRadius: '6px', border: '1px solid #10B981' }}>
+                          ✅ Authorized Counter PC (Auto-Attendance Active)
+                        </span>
+                      ) : (
+                        <span style={{ color: '#DC2626', background: '#FEF2F2', padding: '3px 8px', borderRadius: '6px', border: '1px solid #EF4444' }}>
+                          ⚠️ Not Authorized (Auto-Attendance Blocked on this Device)
+                        </span>
+                      )}
+                    </div>
+                    {!isCurrentDeviceAuthorized && onAuthorizeTerminal && (
+                      <button
+                        type="button"
+                        className="btn primary sm"
+                        style={{ background: '#10B981', borderColor: '#10B981', fontSize: '12px', padding: '5px 12px', fontWeight: 700 }}
+                        onClick={() => {
+                          onAuthorizeTerminal();
+                          setIsCurrentDeviceAuthorized(true);
+                          alert("✅ This computer is now registered as the Authorized Studio Counter PC! Auto-attendance is active here.");
+                        }}
+                      >
+                        ⚡ Authorize This PC
+                      </button>
+                    )}
                   </div>
                 </div>
 
