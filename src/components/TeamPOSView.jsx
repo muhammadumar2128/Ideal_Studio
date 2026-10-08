@@ -1571,9 +1571,12 @@ export default function TeamPOSView({
                           <span style={{ color: 'var(--muted)' }}>⏰ Scheduled Shift ({attStaff}):</span>
                           <span style={{ fontWeight: 800, color: 'var(--ink)' }}>
                             {(() => {
+                              const opener = state.morningOpener || "Alex sotra";
+                              const isOpener = attStaff === opener ||
+                                (attStaff && opener && attStaff.toLowerCase().includes('alex') && opener.toLowerCase().includes('alex'));
                               const timeStr = (state.staffSchedules && state.staffSchedules[attStaff])
-                                || (attStaff === (state.morningOpener || "Alex") ? (state.shopOpenTime || "09:00") : "09:00");
-                              const [h, m] = (timeStr || "09:00").split(':').map(Number);
+                                || (isOpener ? (state.shopOpenTime || "08:45") : "09:00");
+                              const [h, m] = (timeStr || "08:45").split(':').map(Number);
                               const d = new Date(2026, 0, 1, h, m);
                               return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                             })()}
@@ -1581,11 +1584,16 @@ export default function TeamPOSView({
                         </div>
                         <div style={{ fontSize: '11.5px', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>Grace: {state.graceMinutes || 15} mins</span>
-                          {attStaff === (state.morningOpener || "Alex") && (
-                            <span style={{ color: isTerminalAuthorized ? '#059669' : '#D97706', fontWeight: 700 }}>
-                              ⚡ Morning Opener · Auto PC Check-in {isTerminalAuthorized ? '(Auth PC Active)' : '(Requires Auth PC)'}
-                            </span>
-                          )}
+                          {(() => {
+                            const opener = state.morningOpener || "Alex sotra";
+                            const isOpener = attStaff === opener ||
+                              (attStaff && opener && attStaff.toLowerCase().includes('alex') && opener.toLowerCase().includes('alex'));
+                            return isOpener && (
+                              <span style={{ color: isTerminalAuthorized ? '#059669' : '#D97706', fontWeight: 700 }}>
+                                ⚡ Morning Opener · Auto PC Check-in {isTerminalAuthorized ? '(Auth PC Active)' : '(Requires Auth PC)'}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
 

@@ -43,7 +43,7 @@ function getDefaults() {
     studio: "Ideal Photo Studio",
     counter: 0,
     sales: [],
-    staff: ["Umar", "Kabeer", "Owner - Usman", "Alex"],
+    staff: ["Umar", "Kabeer", "Owner - Usman", "Alex sotra"],
     lastStaff: "Umar",
     adminPassword: "irhaali",
     prints,
@@ -60,12 +60,14 @@ function getDefaults() {
     activeDrawerSession: null,
     drawerHistory: [],
     attendance: [],
+    pcPowerLogs: [],
     terminalKey: "IPS-TAXILA-COUNTER-KEY-2026",
-    shopOpenTime: "09:00",
+    shopOpenTime: "08:45",
     graceMinutes: 15,
-    morningOpener: "Alex",
+    morningOpener: "Alex sotra",
     staffSchedules: {
-      "Alex": "09:00",
+      "Alex sotra": "08:45",
+      "Alex": "08:45",
       "Kabeer": "18:00",
       "Umar": "09:00",
       "Owner - Usman": "10:00"
@@ -81,6 +83,15 @@ function loadInitialState() {
       const defs = getDefaults();
       for (let k in defs) {
         if (!(k in parsed)) parsed[k] = defs[k];
+      }
+      if (!parsed.pcPowerLogs || !Array.isArray(parsed.pcPowerLogs)) {
+        parsed.pcPowerLogs = [];
+      }
+      if (parsed.staff && parsed.staff.includes("Alex") && !parsed.staff.includes("Alex sotra")) {
+        parsed.staff = parsed.staff.map(s => s === "Alex" ? "Alex sotra" : s);
+      }
+      if (parsed.morningOpener === "Alex") {
+        parsed.morningOpener = "Alex sotra";
       }
       if (!parsed.staffSchedules || typeof parsed.staffSchedules !== 'object') {
         parsed.staffSchedules = { ...defs.staffSchedules };
@@ -217,6 +228,7 @@ export default function App() {
               const expList = [];
               const drawerList = [];
               const attendanceList = [];
+              const pcPowerList = [];
 
               salesRes.data.forEach(s => {
                 if (s.id && typeof s.id === 'string' && s.id.startsWith('R-')) {
@@ -232,6 +244,7 @@ export default function App() {
                 const isTerminalConfig = s.customer === '__TERMINAL_AUTH__' || s.id === 'CFG-TERMINAL-AUTH';
                 const isShopHoursConfig = s.customer === '__SHOP_HOURS__' || s.id === 'CFG-SHOP-HOURS';
                 const isAttendance = s.customer === '__ATTENDANCE__' || (s.id && String(s.id).startsWith('ATT-'));
+                const isPCPowerLog = s.customer === '__PC_POWER_LOG__' || (s.id && String(s.id).startsWith('PC-POWER-'));
 
                 if (isConfig) {
                   if (s.items && s.items[0] && s.items[0].password) {
@@ -253,6 +266,10 @@ export default function App() {
                 } else if (isAttendance) {
                   if (s.items && s.items[0]) {
                     attendanceList.push(s.items[0]);
+                  }
+                } else if (isPCPowerLog) {
+                  if (s.items && s.items[0]) {
+                    pcPowerList.push(s.items[0]);
                   }
                 } else if (isDrawer) {
                   if (s.items && s.items[0]) {
@@ -308,6 +325,10 @@ export default function App() {
               const remoteAttIds = new Set(attendanceList.map(a => a.id));
               const localOnlyAtt = (prev.attendance || []).filter(a => !remoteAttIds.has(a.id));
               updated.attendance = [...attendanceList, ...localOnlyAtt].sort((a, b) => Number(b.clockIn || b.ts || 0) - Number(a.clockIn || a.ts || 0));
+
+              const remotePowerIds = new Set(pcPowerList.map(p => p.id || p.date));
+              const localOnlyPower = (prev.pcPowerLogs || []).filter(p => !remotePowerIds.has(p.id || p.date));
+              updated.pcPowerLogs = [...pcPowerList, ...localOnlyPower].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
             }
 
             if (settingsRes.data) {
@@ -366,6 +387,7 @@ export default function App() {
           const isTerminalConfig = row.customer === '__TERMINAL_AUTH__' || row.id === 'CFG-TERMINAL-AUTH';
           const isShopHoursConfig = row.customer === '__SHOP_HOURS__' || row.id === 'CFG-SHOP-HOURS';
           const isAttendance = row.customer === '__ATTENDANCE__' || (row.id && String(row.id).startsWith('ATT-'));
+          const isPCPowerLog = row.customer === '__PC_POWER_LOG__' || (row.id && String(row.id).startsWith('PC-POWER-'));
 
           if (isConfig) {
             if (row.items && row.items[0] && row.items[0].password) {
@@ -390,6 +412,18 @@ export default function App() {
             setState(prev => {
               if (prev.attendance && prev.attendance.some(a => a.id === attData.id)) return prev;
               return { ...prev, attendance: [attData, ...(prev.attendance || [])] };
+            });
+          } else if (isPCPowerLog) {
+            const powerData = (row.items && row.items[0]) || row;
+            setState(prev => {
+              const list = prev.pcPowerLogs || [];
+              if (list.some(p => p.id === powerData.id || p.date === powerData.date)) {
+                return {
+                  ...prev,
+                  pcPowerLogs: list.map(p => (p.id === powerData.id || p.date === powerData.date) ? powerData : p)
+                };
+              }
+              return { ...prev, pcPowerLogs: [powerData, ...list] };
             });
           } else if (isDrawer) {
             const drawerData = (row.items && row.items[0]) || row;
@@ -444,6 +478,7 @@ export default function App() {
           const isTerminalConfig = row.customer === '__TERMINAL_AUTH__' || row.id === 'CFG-TERMINAL-AUTH';
           const isShopHoursConfig = row.customer === '__SHOP_HOURS__' || row.id === 'CFG-SHOP-HOURS';
           const isAttendance = row.customer === '__ATTENDANCE__' || (row.id && String(row.id).startsWith('ATT-'));
+          const isPCPowerLog = row.customer === '__PC_POWER_LOG__' || (row.id && String(row.id).startsWith('PC-POWER-'));
 
           if (isConfig) {
             if (row.items && row.items[0] && row.items[0].password) {
@@ -469,6 +504,16 @@ export default function App() {
               ...prev,
               attendance: (prev.attendance || []).map(a => a.id === row.id ? attData : a)
             }));
+          } else if (isPCPowerLog) {
+            const powerData = (row.items && row.items[0]) || row;
+            setState(prev => {
+              const list = prev.pcPowerLogs || [];
+              const exists = list.some(p => p.id === powerData.id || p.date === powerData.date);
+              const nextLogs = exists
+                ? list.map(p => (p.id === powerData.id || p.date === powerData.date) ? powerData : p)
+                : [powerData, ...list];
+              return { ...prev, pcPowerLogs: nextLogs };
+            });
           } else if (isDrawer) {
             const drawerData = (row.items && row.items[0]) || row;
             setState(prev => ({
@@ -1094,10 +1139,13 @@ export default function App() {
   // Helper to calculate shift punctuality for any staff member
   const calculateStaffPunctuality = (staffName, punchTs = Date.now()) => {
     const punchDate = new Date(punchTs);
+    const opener = state.morningOpener || "Alex sotra";
+    const isOpener = staffName === opener ||
+      (staffName && opener && staffName.toLowerCase().includes('alex') && opener.toLowerCase().includes('alex'));
     const staffShiftTime = (state.staffSchedules && state.staffSchedules[staffName])
-      || (staffName === (state.morningOpener || "Alex") ? (state.shopOpenTime || "09:00") : "09:00");
+      || (isOpener ? (state.shopOpenTime || "08:45") : "09:00");
     const graceMin = Number(state.graceMinutes != null ? state.graceMinutes : 15);
-    const [h, m] = (staffShiftTime || "09:00").split(':').map(Number);
+    const [h, m] = (staffShiftTime || "08:45").split(':').map(Number);
 
     const scheduledDate = new Date(punchDate.getFullYear(), punchDate.getMonth(), punchDate.getDate(), h, m, 0);
     const scheduledTs = scheduledDate.getTime();
@@ -1122,7 +1170,7 @@ export default function App() {
     };
   };
 
-  const handleClockIn = async ({ staff, note, isAuto = false }) => {
+  const handleClockIn = async ({ staff, note, isAuto = false, customTs = null }) => {
     const isAuth = isCurrentTerminalAuthorized();
     // Only allow auto-attendance to proceed on authorized studio counter PC (auth PC)
     if (isAuto && !isAuth) {
@@ -1135,15 +1183,15 @@ export default function App() {
       alert('🔒 Access Denied: Attendance can only be recorded on the official Studio Counter Terminal PC. Remote check-in from home or mobile is blocked.');
       return null;
     }
-    const nowTs = Date.now();
+    const nowTs = customTs ? Number(customTs) : Date.now();
     const today = getTodayDateStr(new Date(nowTs));
     const punctuality = calculateStaffPunctuality(staff, nowTs);
 
     let finalNotes = (note || '').trim();
     if (isAuto) {
       const autoStr = punctuality.isLate
-        ? `⚠️ PC Boot Auto-Attendance · Late by ${punctuality.lateMinutes}m (Shift: ${punctuality.scheduledDisplay} · System on: ${punctuality.punchDisplay})`
-        : `✅ PC Boot Auto-Attendance · On-Time (Shift: ${punctuality.scheduledDisplay} · System on: ${punctuality.punchDisplay})`;
+        ? `⚠️ PC Hardware Power-On · Late by ${punctuality.lateMinutes}m (Shift: ${punctuality.scheduledDisplay} · PC Turned on: ${punctuality.punchDisplay})`
+        : `✅ PC Hardware Power-On · On-Time (Shift: ${punctuality.scheduledDisplay} · PC Turned on: ${punctuality.punchDisplay})`;
       finalNotes = finalNotes ? `${finalNotes} · ${autoStr}` : autoStr;
     } else {
       const lateStr = punctuality.isLate
@@ -1166,7 +1214,8 @@ export default function App() {
       lateMinutes: punctuality.lateMinutes,
       notes: finalNotes,
       isManual: false,
-      autoCaptured: Boolean(isAuto)
+      autoCaptured: Boolean(isAuto),
+      hardwareCaptured: Boolean(customTs)
     };
 
     const nextAttendance = [newRecord, ...(state.attendance || [])];
@@ -1192,7 +1241,7 @@ export default function App() {
     return newRecord;
   };
 
-  // Automatic PC boot / wifi connection morning opener attendance trigger
+  // Automatic Counter PC Power-On hardware attendance handler
   useEffect(() => {
     let isMounted = true;
 
@@ -1206,22 +1255,78 @@ export default function App() {
       if (supabase && !cloudSynced) return;
 
       const today = getTodayDateStr();
-      const opener = state.morningOpener || "Alex";
+      const opener = state.morningOpener || "Alex sotra";
       const autoKey = `ideal_studio_auto_clockin_${opener}_${today}`;
+
+      // Check if we have a PC Power Log from the authorized counter hardware for today
+      const todayPowerLog = (state.pcPowerLogs || []).find(p => p.date === today);
 
       // Check if opener already has a punch for today in state
       const hasPunchToday = (state.attendance || []).some(
-        a => a.staff === opener && a.date === today && a.status !== 'absent' && a.status !== 'leave'
+        a => (a.staff === opener || (opener.toLowerCase().includes('alex') && a.staff.toLowerCase().includes('alex'))) &&
+             a.date === today && a.status !== 'absent' && a.status !== 'leave'
       );
-      const alreadyFlagged = localStorage.getItem(autoKey);
 
-      if (hasPunchToday || alreadyFlagged) return;
+      // If attendance was already captured, check if it needs alignment with real hardware boot time:
+      if (hasPunchToday) {
+        const existingPunch = (state.attendance || []).find(
+          a => (a.staff === opener || (opener.toLowerCase().includes('alex') && a.staff.toLowerCase().includes('alex'))) &&
+               a.date === today && a.status !== 'absent' && a.status !== 'leave'
+        );
+        if (existingPunch && existingPunch.autoCaptured && todayPowerLog && todayPowerLog.morningBootTs &&
+            existingPunch.clockIn > (Number(todayPowerLog.morningBootTs) + 180000)) {
+          // Align existing attendance with true hardware boot so cashier isn't penalized for browser launch delay
+          const bootTs = Number(todayPowerLog.morningBootTs);
+          const punc = calculateStaffPunctuality(opener, bootTs);
+          const alignedNotes = punc.isLate
+            ? `⚠️ PC Hardware Power-On · Late by ${punc.lateMinutes}m (Shift: ${punc.scheduledDisplay} · PC Turned on: ${punc.punchDisplay})`
+            : `✅ PC Hardware Power-On · On-Time (Shift: ${punc.scheduledDisplay} · PC Turned on: ${punc.punchDisplay})`;
+          const updatedRecord = {
+            ...existingPunch,
+            clockIn: bootTs,
+            ts: bootTs,
+            isLate: punc.isLate,
+            lateMinutes: punc.lateMinutes,
+            hardwareCaptured: true,
+            notes: alignedNotes
+          };
+          setState(prev => ({
+            ...prev,
+            attendance: (prev.attendance || []).map(a => a.id === existingPunch.id ? updatedRecord : a)
+          }));
+          if (supabase) {
+            supabase.from('sales').update({
+              ts: bootTs,
+              items: [updatedRecord]
+            }).eq('id', existingPunch.id).catch(err => console.warn('Supabase align error:', err));
+          }
+        }
+        return;
+      }
+
+      // CRITICAL REQUIREMENT:
+      // "when the employe open the pos then it automatically mark shp opening time i dont want this ,
+      //  i want when the pc turns on , it fetch the time and when pc shut down at 9 30 it fetch the time and show to admin only ,
+      //  remeber tehre can be a shortage of light in mid day ignore that"
+      //
+      // Do NOT mark shop opening using the current browser open time!
+      // Only trigger auto-attendance when the true PC hardware power-on time is available from today's power log.
+      if (!todayPowerLog || !todayPowerLog.morningBootTs) {
+        return;
+      }
+
+      const alreadyFlagged = localStorage.getItem(autoKey);
+      if (alreadyFlagged) return;
 
       // Lock via localStorage immediately to prevent double execution during re-renders or tab switches
       localStorage.setItem(autoKey, Date.now().toString());
 
       try {
-        const res = await handleClockIn({ staff: opener, isAuto: true });
+        const res = await handleClockIn({
+          staff: opener,
+          isAuto: true,
+          customTs: todayPowerLog.morningBootTs
+        });
         if (isMounted && res) {
           const punctuality = calculateStaffPunctuality(opener, res.clockIn);
           setAutoAttToast({
@@ -1237,7 +1342,7 @@ export default function App() {
       }
     };
 
-    // 1. Trigger immediately on system launch / browser load (only if on auth PC)
+    // 1. Trigger on system launch (only if power log is available on auth PC)
     checkAndTriggerAutoAttendance();
 
     // Fallback timer: if offline or Supabase connection is delayed beyond 2.5s, proceed with local check
@@ -1442,11 +1547,12 @@ export default function App() {
   const handleUpdateShopHours = async ({ shopOpenTime, graceMinutes, morningOpener, staffSchedules }) => {
     const nextState = {
       ...state,
-      shopOpenTime: shopOpenTime || state.shopOpenTime || "09:00",
+      shopOpenTime: shopOpenTime || state.shopOpenTime || "08:45",
       graceMinutes: Number(graceMinutes != null ? graceMinutes : 15),
-      morningOpener: morningOpener || state.morningOpener || "Alex",
+      morningOpener: morningOpener || state.morningOpener || "Alex sotra",
       staffSchedules: staffSchedules || state.staffSchedules || {
-        "Alex": "09:00",
+        "Alex sotra": "08:45",
+        "Alex": "08:45",
         "Kabeer": "18:00",
         "Umar": "09:00",
         "Owner - Usman": "10:00"
@@ -1476,6 +1582,28 @@ export default function App() {
         console.error('Error saving shop hours to Supabase:', err);
       }
     }
+  };
+
+  const handleSyncPCPowerAudit = async () => {
+    if (!supabase) return [];
+    try {
+      const { data, error } = await supabase.from('sales')
+        .select('*')
+        .eq('customer', '__PC_POWER_LOG__')
+        .order('ts', { ascending: false })
+        .limit(30);
+      if (data && data.length > 0) {
+        const logs = data.map(d => (d.items && d.items[0]) || d);
+        setState(prev => ({
+          ...prev,
+          pcPowerLogs: logs
+        }));
+        return logs;
+      }
+    } catch (e) {
+      console.warn('Sync PC power audit failed:', e);
+    }
+    return [];
   };
 
   // Export & Backup handlers
@@ -1601,15 +1729,28 @@ export default function App() {
     }
   };
 
-  // 1. If not authenticated into the Platform yet, render Platform Login screen
-  if (!isPlatformAuth) {
+  // 1. If not authenticated into the Platform yet, or on unauthorized device attempting to view POS without Admin:
+  const isAuthDevice = isCurrentTerminalAuthorized();
+
+  if (!isPlatformAuth || (viewMode === 'team' && !isAuthDevice && !adminUser)) {
     return (
       <PlatformLogin
+        isDeviceAuthorized={isAuthDevice}
+        adminPassword={state.adminPassword || 'irhaali'}
+        terminalKey={state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026'}
         onLoginSuccess={() => {
           localStorage.setItem('platform_pos_auth', 'true');
           sessionStorage.setItem('platform_pos_auth', 'true');
           setIsPlatformAuth(true);
         }}
+        onAdminRemoteLogin={(adminName) => {
+          localStorage.setItem('platform_pos_auth', 'true');
+          sessionStorage.setItem('platform_pos_auth', 'true');
+          setIsPlatformAuth(true);
+          setAdminUser(adminName || 'Admin');
+          setViewMode('admin');
+        }}
+        onAuthorizeTerminal={handleAuthorizeCurrentTerminal}
       />
     );
   }
@@ -1796,6 +1937,7 @@ export default function App() {
           onRevokeTerminal={handleRevokeCurrentTerminal}
           onRegenerateTerminalKey={handleRegenerateTerminalKey}
           onUpdateShopHours={handleUpdateShopHours}
+          onSyncPCPowerAudit={handleSyncPCPowerAudit}
         />
       )}
 

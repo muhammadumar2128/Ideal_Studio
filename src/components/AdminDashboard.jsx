@@ -121,7 +121,8 @@ export default function AdminDashboard({
   onAuthorizeTerminal,
   onRevokeTerminal,
   onRegenerateTerminalKey,
-  onUpdateShopHours
+  onUpdateShopHours,
+  onSyncPCPowerAudit
 }) {
   const [adminTab, setAdminTab] = useState('analytics');
 
@@ -130,16 +131,19 @@ export default function AdminDashboard({
   const [selectedMonthKey, setSelectedMonthKey] = useState(currentMonthKey);
 
   // Shop Opening & Late Shift Rules states
-  const [shopOpenTimeVal, setShopOpenTimeVal] = useState(state.shopOpenTime || "09:00");
+  const [shopOpenTimeVal, setShopOpenTimeVal] = useState(state.shopOpenTime || "08:45");
   const [graceMinutesVal, setGraceMinutesVal] = useState(state.graceMinutes != null ? state.graceMinutes : 15);
-  const [morningOpenerVal, setMorningOpenerVal] = useState(state.morningOpener || "Alex");
+  const [morningOpenerVal, setMorningOpenerVal] = useState(state.morningOpener || "Alex sotra");
   const [staffSchedulesVal, setStaffSchedulesVal] = useState(state.staffSchedules || {
-    "Alex": "09:00",
+    "Alex sotra": "08:45",
+    "Alex": "08:45",
     "Kabeer": "18:00",
     "Umar": "09:00",
     "Owner - Usman": "10:00"
   });
   const [isSavingHours, setIsSavingHours] = useState(false);
+  const [isSyncingPowerLogs, setIsSyncingPowerLogs] = useState(false);
+  const [showPowerTrackerGuide, setShowPowerTrackerGuide] = useState(false);
 
   useEffect(() => {
     if (state.shopOpenTime) setShopOpenTimeVal(state.shopOpenTime);
@@ -1854,9 +1858,12 @@ export default function AdminDashboard({
           const n = new Date();
           const todayStr = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
           const todayPunches = (state.attendance || []).filter(a => a.date === todayStr && a.status !== 'leave' && a.status !== 'absent');
-          if (todayPunches.length > 0) return null; // Already opened!
+          const todayPowerLog = (state.pcPowerLogs || []).find(p => p.date === todayStr);
 
-          const [h, m] = (state.shopOpenTime || "09:00").split(':').map(Number);
+          // If punches exist OR PC is already confirmed powered on today via hardware log, shop is NOT offline!
+          if (todayPunches.length > 0 || (todayPowerLog && todayPowerLog.morningBootTs)) return null;
+
+          const [h, m] = (state.shopOpenTime || "08:45").split(':').map(Number);
           const grace = Number(state.graceMinutes != null ? state.graceMinutes : 15);
           const scheduledDate = new Date(n.getFullYear(), n.getMonth(), n.getDate(), h, m, 0);
           const deadlineDate = new Date(scheduledDate.getTime() + (grace * 60000));
@@ -1864,8 +1871,8 @@ export default function AdminDashboard({
           if (n > deadlineDate) {
             const lateMins = Math.round((n - scheduledDate) / 60000);
             return {
-              scheduled: state.shopOpenTime || "09:00",
-              opener: state.morningOpener || "Alex",
+              scheduled: state.shopOpenTime || "08:45",
+              opener: state.morningOpener || "Alex sotra",
               lateMins
             };
           }
@@ -1945,6 +1952,453 @@ export default function AdminDashboard({
               </div>
             )}
 
+            {/* 🖥️ COUNTER PC HARDWARE POWER & LOAD-SHEDDING AUDIT (ADMIN ONLY) */}
+            {(() => {
+              const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              const todayPowerLog = (state.pcPowerLogs || []).find(p => p.date === todayStr);
+              const isPcOnline = Boolean(todayPowerLog && (Date.now() - (todayPowerLog.lastHeartbeatTs || 0)) < 300000);
+
+              // Calculate punctuality for today's boot time
+              let bootPunctuality = null;
+              if (todayPowerLog && todayPowerLog.morningBootTs) {
+                const bootD = new Date(Number(todayPowerLog.morningBootTs));
+                const [targetH, targetM] = (state.shopOpenTime || "08:45").split(':').map(Number);
+                const schedD = new Date(bootD.getFullYear(), bootD.getMonth(), bootD.getDate(), targetH, targetM, 0);
+                const graceMins = Number(state.graceMinutes != null ? state.graceMinutes : 15);
+                const deadlineD = new Date(schedD.getTime() + (graceMins * 60000));
+                const isLate = bootD.getTime() > deadlineD.getTime();
+                const lateMins = isLate ? Math.max(0, Math.round((bootD.getTime() - schedD.getTime()) / 60000)) : 0;
+                bootPunctuality = {
+                  isLate,
+                  lateMins,
+                  bootTimeStr: todayPowerLog.morningBootTime || bootD.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                  scheduledStr: schedD.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                  deadlineStr: deadlineD.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                };
+              }
+
+              const outagesList = (todayPowerLog && Array.isArray(todayPowerLog.outages)) ? todayPowerLog.outages : [];
+
+              return (
+                <div
+                  className="card"
+                  style={{
+                    border: '2px solid #2563EB',
+                    borderRadius: '14px',
+                    boxShadow: '0 8px 24px rgba(37, 99, 235, 0.08)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)',
+                      padding: '16px 20px',
+                      color: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px'
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '24px' }}>🖥️</span>
+                        <h2 style={{ margin: 0, color: '#FFFFFF', fontSize: '18px', fontWeight: 800 }}>
+                          Counter PC Hardware Power &amp; Load-Shedding Audit
+                        </h2>
+                        <span
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.2)',
+                            color: '#FFFFFF',
+                            padding: '3px 9px',
+                            borderRadius: '20px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            letterSpacing: '0.5px'
+                          }}
+                        >
+                          🔒 ADMIN ONLY
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12.5px', color: '#DBEAFE', marginTop: '4px' }}>
+                        Direct OS telemetry from Authorized Counter PC (Shop # 45, HIT Taxila Cantt). Unaffected by browser launch delays.
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.15)',
+                          color: '#FFFFFF',
+                          borderColor: 'rgba(255, 255, 255, 0.3)',
+                          fontWeight: 700
+                        }}
+                        disabled={isSyncingPowerLogs}
+                        onClick={async () => {
+                          setIsSyncingPowerLogs(true);
+                          if (onSyncPCPowerAudit) {
+                            await onSyncPCPowerAudit();
+                          }
+                          setTimeout(() => setIsSyncingPowerLogs(false), 800);
+                        }}
+                      >
+                        {isSyncingPowerLogs ? '🔄 Syncing...' : '🔄 Sync Hardware Power Log'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn sm"
+                        style={{
+                          background: '#FFFFFF',
+                          color: '#1E3A8A',
+                          borderColor: '#FFFFFF',
+                          fontWeight: 800
+                        }}
+                        onClick={() => setShowPowerTrackerGuide(prev => !prev)}
+                      >
+                        ⚙️ {showPowerTrackerGuide ? 'Hide Setup' : 'PC Tracker Setup'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="body" style={{ padding: '20px' }}>
+                    {/* 4 EXECUTIVE TELEMETRY TILES */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                      
+                      {/* TILE 1: COUNTER PC HARDWARE STATUS */}
+                      <div
+                        style={{
+                          background: isPcOnline ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.05)',
+                          border: isPcOnline ? '1.5px solid #10B981' : '1px solid #F87171',
+                          borderRadius: '12px',
+                          padding: '14px 16px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                            Auth Counter PC
+                          </span>
+                          <span
+                            className="badge"
+                            style={{
+                              background: isPcOnline ? '#ECFDF5' : '#FEF2F2',
+                              color: isPcOnline ? '#059669' : '#DC2626',
+                              fontWeight: 800,
+                              fontSize: '11px'
+                            }}
+                          >
+                            {isPcOnline ? '🟢 Online & Monitored' : (todayPowerLog ? '🟡 Last Ping Offline' : '🔴 No Ping Today')}
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 800, fontSize: '17px', color: 'var(--ink)' }}>
+                          {todayPowerLog?.machineName || 'Authorized Counter PC'}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                          Heartbeat: {todayPowerLog?.lastHeartbeatTime ? `Active at ${todayPowerLog.lastHeartbeatTime}` : 'Awaiting tracker script ping'}
+                        </div>
+                      </div>
+
+                      {/* TILE 2: MORNING PC TURN-ON (SHOP OPEN) */}
+                      <div
+                        style={{
+                          background: bootPunctuality ? (bootPunctuality.isLate ? 'rgba(245, 158, 11, 0.06)' : 'rgba(16, 185, 129, 0.06)') : 'var(--paper)',
+                          border: bootPunctuality ? (bootPunctuality.isLate ? '1.5px solid #F59E0B' : '1.5px solid #10B981') : '1px solid var(--line)',
+                          borderRadius: '12px',
+                          padding: '14px 16px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                            ⚡ Morning PC Power-On
+                          </span>
+                          {bootPunctuality && (
+                            <span
+                              className="badge"
+                              style={{
+                                background: bootPunctuality.isLate ? '#FEF3C7' : '#ECFDF5',
+                                color: bootPunctuality.isLate ? '#D97706' : '#059669',
+                                fontWeight: 800,
+                                fontSize: '11px'
+                              }}
+                            >
+                              {bootPunctuality.isLate ? `⚠️ Late +${bootPunctuality.lateMins}m` : '✅ On-Time Open'}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 900, fontSize: '20px', color: 'var(--ink)', fontFamily: 'var(--font-mono, monospace)' }}>
+                          {todayPowerLog?.morningBootTime || 'Not Recorded Yet'}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                          Target: {state.shopOpenTime || "08:45"} AM ({state.graceMinutes || 15}m grace) · Opener: <strong>{state.morningOpener || "Alex sotra"}</strong>
+                        </div>
+                      </div>
+
+                      {/* TILE 3: EVENING PC SHUTDOWN (SHOP CLOSE) */}
+                      <div
+                        style={{
+                          background: todayPowerLog?.eveningShutdownTime ? 'rgba(99, 102, 241, 0.06)' : 'var(--paper)',
+                          border: todayPowerLog?.eveningShutdownTime ? '1.5px solid #6366F1' : '1px solid var(--line)',
+                          borderRadius: '12px',
+                          padding: '14px 16px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                            🌙 Evening PC Shutdown
+                          </span>
+                          <span
+                            className="badge"
+                            style={{
+                              background: todayPowerLog?.eveningShutdownTime ? '#EEF2FF' : 'var(--line-soft)',
+                              color: todayPowerLog?.eveningShutdownTime ? '#4F46E5' : 'var(--muted)',
+                              fontWeight: 800,
+                              fontSize: '11px'
+                            }}
+                          >
+                            {todayPowerLog?.eveningShutdownTime ? '🌙 Shop Closed' : (isPcOnline ? '🟢 Currently Running' : 'Pending Shutdown')}
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 900, fontSize: '20px', color: 'var(--ink)', fontFamily: 'var(--font-mono, monospace)' }}>
+                          {todayPowerLog?.eveningShutdownTime || (isPcOnline ? 'Active (Closing ~9:30 PM)' : 'Pending ~9:30 PM')}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                          Closing Target: ~09:30 PM {todayPowerLog?.yesterdayShutdown ? `· Yesterday: ${todayPowerLog.yesterdayShutdown}` : ''}
+                        </div>
+                      </div>
+
+                      {/* TILE 4: MIDDAY LIGHT SHORTAGES (LOAD SHEDDING) */}
+                      <div
+                        style={{
+                          background: outagesList.length > 0 ? 'rgba(245, 158, 11, 0.06)' : 'var(--paper)',
+                          border: outagesList.length > 0 ? '1.5px solid #F59E0B' : '1px solid var(--line)',
+                          borderRadius: '12px',
+                          padding: '14px 16px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                            💡 Mid-day Light Shortages
+                          </span>
+                          <span
+                            className="badge"
+                            style={{
+                              background: '#EFF6FF',
+                              color: '#2563EB',
+                              fontWeight: 800,
+                              fontSize: '11px'
+                            }}
+                          >
+                            🛡️ Load Shedding Ignored
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 900, fontSize: '20px', color: 'var(--ink)' }}>
+                          {outagesList.length} Power Outage(s)
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                          Midday power cuts are filtered out and do not alter opening or closing metrics.
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* MIDDAY POWER OUTAGES BREAKDOWN (IF ANY DETECTED) */}
+                    {outagesList.length > 0 && (
+                      <div
+                        style={{
+                          background: '#FFFBEB',
+                          border: '1.5px solid #FDE68A',
+                          borderRadius: '10px',
+                          padding: '14px 16px',
+                          marginBottom: '20px'
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#92400E', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>⚡</span>
+                          <span>Detected Midday Power Interruptions (Load Shedding — Safely Ignored):</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {outagesList.map((outage, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: '#FFFFFF',
+                                border: '1px solid #FDE68A',
+                                borderRadius: '8px',
+                                padding: '8px 12px',
+                                fontSize: '12.5px',
+                                flexWrap: 'wrap',
+                                gap: '8px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 700, color: '#B45309' }}>Power Outage #{idx + 1}:</span>
+                                <span>{outage.start} → {outage.end}</span>
+                                <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', fontWeight: 700, fontSize: '11px' }}>
+                                  {outage.durationMins || 1} mins outage
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '11.5px', color: '#78350F', fontStyle: 'italic' }}>
+                                {outage.note || 'Midday load shedding (Ignored for Shop Close)'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 1-CLICK TRACKER SETUP GUIDE (COLLAPSIBLE) */}
+                    {showPowerTrackerGuide && (
+                      <div
+                        style={{
+                          background: 'rgba(37, 99, 235, 0.04)',
+                          border: '1.5px solid rgba(37, 99, 235, 0.25)',
+                          borderRadius: '12px',
+                          padding: '18px 20px',
+                          marginBottom: '20px'
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: '15px', color: '#1E3A8A', marginBottom: '6px' }}>
+                          🚀 Counter PC Automatic Tracker Setup (Zero-Click Operation)
+                        </div>
+                        <p style={{ fontSize: '13px', color: 'var(--ink)', margin: '0 0 12px 0', lineHeight: 1.5 }}>
+                          The Authorized Counter PC runs a silent background agent (PowerShell) on Windows Startup. It reads the Windows Kernel boot time, automatically marks Alex Sotra's attendance upon power-on, ignores mid-day light cuts, and logs the 9:30 PM shutdown to Supabase.
+                        </p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                          <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: '8px', padding: '12px 14px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--ink)', marginBottom: '4px' }}>
+                              Option 1: Double-Click Installer
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                              On the Authorized Counter PC, simply double-click:
+                            </div>
+                            <code style={{ background: 'var(--paper)', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', display: 'block', fontWeight: 700, color: '#2563EB', wordBreak: 'break-all' }}>
+                              scripts\install_pc_tracker.bat
+                            </code>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '6px' }}>
+                              Places a silent launcher in Windows Startup folder (no CMD window popup for cashier).
+                            </div>
+                          </div>
+
+                          <div style={{ background: '#FFFFFF', border: '1px solid var(--line)', borderRadius: '8px', padding: '12px 14px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--ink)', marginBottom: '4px' }}>
+                              Option 2: Instant Test Sync
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
+                              To test detection right now, double-click:
+                            </div>
+                            <code style={{ background: 'var(--paper)', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', display: 'block', fontWeight: 700, color: '#059669', wordBreak: 'break-all' }}>
+                              scripts\sync_pc_power_now.bat
+                            </code>
+                            <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '6px' }}>
+                              Immediately fetches today's boot time &amp; load shedding events and pushes to Supabase.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>ℹ️</span>
+                          <span>Location: Shop # 45, Post Office Market HIT, Taxila Cantt · Device Auth Key: <strong>{state.terminalKey || 'IPS-TAXILA-COUNTER-KEY-2026'}</strong></span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* RECENT PC POWER LOGS TABLE */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--ink)' }}>
+                          📋 Daily Hardware Power &amp; Opening History ({selectedMonthKey})
+                        </div>
+                        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                          {(state.pcPowerLogs || []).filter(p => !selectedMonthKey || String(p.date || '').startsWith(selectedMonthKey)).length} day(s) recorded
+                        </span>
+                      </div>
+
+                      <div className="table-wrap">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Morning PC Turn-On (Open)</th>
+                              <th>Evening Shutdown (Close)</th>
+                              <th>Midday Light Shortages</th>
+                              <th>Status</th>
+                              <th>Opener Auto-Punch</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              const monthLogs = (state.pcPowerLogs || []).filter(p => !selectedMonthKey || String(p.date || '').startsWith(selectedMonthKey));
+                              if (!monthLogs.length) {
+                                return (
+                                  <tr>
+                                    <td colSpan="6" style={{ textAlign: 'center', color: 'var(--muted)', padding: '24px' }}>
+                                      No PC hardware power logs recorded for {selectedMonthKey} yet. Run <code>scripts\install_pc_tracker.bat</code> on the Counter PC.
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                              return monthLogs.map(log => {
+                                const outCount = Array.isArray(log.outages) ? log.outages.length : 0;
+                                const isLogToday = log.date === todayStr;
+
+                                return (
+                                  <tr key={log.id || log.date}>
+                                    <td style={{ fontWeight: 700 }}>
+                                      {log.date} {isLogToday && <span className="badge sm" style={{ background: '#EFF6FF', color: '#2563EB', marginLeft: '4px' }}>Today</span>}
+                                    </td>
+                                    <td style={{ fontWeight: 800, color: '#059669', fontFamily: 'var(--font-mono, monospace)' }}>
+                                      {log.morningBootTime || (log.morningBootTs ? formatPunchTime(log.morningBootTs) : '—')}
+                                    </td>
+                                    <td style={{ fontWeight: 800, color: log.eveningShutdownTime ? '#4F46E5' : 'var(--muted)', fontFamily: 'var(--font-mono, monospace)' }}>
+                                      {log.eveningShutdownTime || (isLogToday && isPcOnline ? '🟢 Still Running' : '—')}
+                                    </td>
+                                    <td>
+                                      {outCount > 0 ? (
+                                        <span className="badge sm" style={{ background: '#FEF3C7', color: '#B45309', fontWeight: 700 }}>
+                                          ⚡ {outCount} Outage(s) Ignored
+                                        </span>
+                                      ) : (
+                                        <span style={{ color: 'var(--muted)', fontSize: '12px' }}>None (Continuous Power)</span>
+                                      )}
+                                    </td>
+                                    <td>
+                                      <span
+                                        className="badge sm"
+                                        style={{
+                                          background: (isLogToday && isPcOnline) ? '#ECFDF5' : '#F3F4F6',
+                                          color: (isLogToday && isPcOnline) ? '#059669' : 'var(--muted)',
+                                          fontWeight: 700
+                                        }}
+                                      >
+                                        {isLogToday && isPcOnline ? 'Online' : 'Archived'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB' }}>
+                                        {state.morningOpener || "Alex sotra"} (Auto-Linked)
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* SHOP OPENING & SHIFT HOURS CONFIGURATION CARD */}
             <div className="card" style={{ border: '2px solid rgba(37, 99, 235, 0.3)' }}>
               <h2>
@@ -1959,7 +2413,7 @@ export default function AdminDashboard({
                     ⚡ Morning PC Power-On Auto-Attendance (Auth PC Restricted):
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--ink)', lineHeight: 1.5 }}>
-                    When the <strong>Authorized Counter PC (Auth PC)</strong> is powered on in the morning and launches the system (or connects to wifi), <strong>{morningOpenerVal}</strong>'s attendance is automatically recorded with the exact timestamp. If past {shopOpenTimeVal} + {graceMinutesVal}m grace, late minutes are logged automatically. Remote or unauthorized devices are blocked from auto-triggering.
+                    When the <strong>Authorized Counter PC (Auth PC)</strong> is powered on in the morning, <strong>{morningOpenerVal}</strong>'s attendance is automatically stamped with the exact PC boot timestamp (not the delayed time someone opens the POS browser). If past {shopOpenTimeVal} + {graceMinutesVal}m grace, late minutes are logged automatically. Mid-day light shortages (load shedding) in Taxila are safely ignored, and the evening shutdown (~9:30 PM) is captured for Admin audit. Remote or unauthorized devices are blocked from auto-triggering.
                   </div>
                   <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(37, 99, 235, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={{ fontSize: '12.5px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
